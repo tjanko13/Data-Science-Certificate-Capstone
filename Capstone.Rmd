@@ -37,7 +37,7 @@ raw_dat %>%
 ```{r}
 dat = raw_dat %>%
   unnest_tokens(word, review) %>%
-  anti_join(stop_words)
+  anti_join(stop_words, by = 'word')
 ```
 
 
@@ -51,7 +51,7 @@ Notice that 'br' was for making a new line `<br>`
 ```{r}
 dat = raw_dat %>%
   unnest_tokens(word, review) %>%
-  anti_join(stop_words) %>%
+  anti_join(stop_words, by = 'word') %>%
   mutate(word = str_extract(word, "[a-z']+")) %>%
   filter(word != 'br') %>%
   filter(word != 'movie') %>%
@@ -185,5 +185,181 @@ sent_dat %>%
   acast(word ~ loughran, value.var = "n", fill = 0) %>%
   comparison.cloud(colors = brewer.pal(8,"Dark2"),
                    max.words = 100)
+```
+
+
+
+
+## Looking beyond individual words!
+
+```{r}
+dat_sentences = raw_dat %>% 
+  rename(text = review) %>%
+  unnest_tokens(sentence, text, token = "sentences")
+head(dat_sentences)
+```
+
+
+```{r}
+sentence_dat = raw_dat %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(word, review) %>%
+  anti_join(stop_words, by = 'word') %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  filter(word != 'br') %>%
+  filter(word != 'movie') %>%
+  filter(word != 'film') %>%
+  rename(original_sentiment = sentiment)
+
+sentence_word_counts <- sentence_dat %>%
+  group_by(original_sentiment, id) %>%
+  summarize(words = n())
+
+head(sentence_word_counts)
+```
+
+```{r}
+# Most negative
+sentence_dat %>%
+  semi_join(bing %>% filter(sentiment == 'negative'), by = 'word') %>%
+  group_by(original_sentiment, id) %>%
+  summarize(negativewords = n()) %>%
+  left_join(sentence_word_counts, by = c("original_sentiment", "id")) %>%
+  mutate(ratio = negativewords/words) %>%
+  top_n(1) %>%
+  ungroup()
+```
+
+
+```{r}
+# Most positive
+sentence_dat %>%
+  semi_join(bing %>% filter(sentiment == 'positive'), by = 'word') %>%
+  group_by(original_sentiment, id) %>%
+  summarize(positivewords = n()) %>%
+  left_join(sentence_word_counts, by = c("original_sentiment", "id")) %>%
+  mutate(ratio = positivewords/words) %>%
+  top_n(1) %>%
+  ungroup()
+```
+
+
+
+
+## Identifying important words
+
+```{r}
+dat_word_count = dat %>%
+  count(sentiment, word, sort = TRUE)
+head(dat_word_count)
+```
+
+
+```{r}
+dat_total_count = dat_word_count %>%
+  group_by(sentiment) %>%
+  summarize(total = sum(n))
+head(dat_total_count)
+```
+
+```{r}
+dat_word_count = dat_word_count %>%
+  left_join(dat_total_count, by = 'sentiment')
+head(dat_word_count)
+```
+
+
+```{r}
+ggplot(dat_word_count, aes(n/total, fill = sentiment)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~sentiment, ncol = 2, scales = "free_y")
+```
+
+```{r}
+freq_by_rank <- dat_word_count %>% 
+  group_by(sentiment) %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = n/total)
+
+head(freq_by_rank)
+```
+
+```{r}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = sentiment)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+
+```{r}
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 1000,
+         rank > 5)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+```
+
+
+```{r}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = sentiment)) + 
+  geom_abline(intercept = -0.62, slope = -1.1, color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+
+```{r}
+dat_word_count <- dat_word_count %>%
+  bind_tf_idf(word, sentiment, n)
+head(dat_word_count)
+```
+
+```{r}
+dat_word_count %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r}
+dat_word_count %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(sentiment) %>% 
+  top_n(15) %>% 
+  ungroup() %>%
+  ggplot(aes(word, tf_idf, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~sentiment, ncol = 2, scales = "free") +
+  coord_flip()
+```
+
+
+```{r}
+dat_word_count = dat_word_count %>%
+  group_by(sentiment) %>% 
+  arrange(-tf_idf) %>%
+  mutate(ranking = row_number()) %>%
+  ungroup()
+head(dat_word_count)
+```
+
+```{r}
+dat_word_count %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(sentiment) %>% 
+  top_n(15, wt = tf_idf) %>% 
+  ungroup() %>%
+  ggplot(aes(word, tf_idf, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~sentiment, ncol = 2, scales = "free") +
+  coord_flip()
 ```
 
