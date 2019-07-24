@@ -22,7 +22,8 @@ Data is coming from: <https://www.kaggle.com/lakshmi25npathi/imdb-dataset-of-50k
 
 ## Exploratory Data Analysis
 ```{r}
-raw_dat = read_csv('IMDB Dataset.csv')
+# raw_dat = read_csv('IMDB Dataset.csv') # can use this if you need to have the file stored locally, just place it into the top level directory of this project
+raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.csv')
 head(raw_dat)
 ```
 
