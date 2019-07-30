@@ -12,7 +12,14 @@ library("tidytext")
 library("scales")
 library("wordcloud")
 library("reshape2")
+library("igraph")
+library("ggraph")
+library('caret')
+library('GGally')
+library('rpart.plot')
+library('SnowballC')
 data("stop_words")
+set.seed(123)
 ```
 
 # Add cool title up here
@@ -55,6 +62,7 @@ dat %>%
 Notice that 'br' was for making a new line `<br>`
 ```{r}
 dat = raw_dat %>%
+  mutate(id = row_number()) %>%
   unnest_tokens(word, review) %>%
   anti_join(stop_words, by = 'word') %>%
   mutate(word = str_extract(word, "[a-z']+")) %>%
@@ -348,10 +356,6 @@ dat_word_count %>%
 
 
 
-# How do I unnest the raw text data?
-```{r}
-dat_bigrams = raw_dat %>%
-```
 
 
 ```{r}
@@ -360,11 +364,6 @@ dat_bigrams = raw_dat %>%
 head(dat_bigrams)
 ```
 
-# How do I see the most used bigrams?
-```{r}
-dat_bigrams %>%
-  
-```
 
 ```{r}
 dat_bigrams %>%
@@ -508,6 +507,161 @@ negated_words %>%
 
 
 ```{r}
+bigram_graph <- bigram_counts %>%
+  filter(n > 300) %>%
+  graph_from_data_frame()
 
+bigram_graph
+```
+
+
+```{r}
+set.seed(2017)
+
+ggraph(bigram_graph, layout = 'fr') +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+```
+
+
+
+```{r}
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 3) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+
+
+
+
+
+## Back to single word...
+```{r}
+head(sent_dat)
+```
+
+
+
+```{r}
+head(dat_word_count)
+```
+```{r}
+dat_sentiment = dat_word_count %>%
+  left_join(bing, by = 'word')
+head(dat_sentiment)
+```
+
+
+```{r}
+dat = raw_dat %>%
+  mutate(id = row_number()) %>%
+  unnest_tokens(word, review) %>%
+  anti_join(stop_words, by = 'word') %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  filter(word != 'br') %>%
+  filter(word != 'movie') %>%
+  filter(word != 'film') %>%
+  mutate(word = SnowballC::wordStem(word))
+head(dat)
+
+# training_split = 0.05
+# smp_size = floor(training_split * nrow(dat))
+# dat_index = sample(seq_len(nrow(dat)), size = smp_size)
+# dat_train = dat[dat_index,]
+# dat_test = dat[-dat_index,]
+```
+
+```{r}
+dat_dtm = dat %>%
+  count(id, word) %>%
+  cast_dtm(document = id, term = word, 
+           value = n, weighting = tm::weightTfIdf)
+dat_dtm
+```
+
+```{r}
+dat_dtm_reduced = tm::removeSparseTerms(dat_dtm, sparse = 0.95)
+dat_dtm_reduced
+```
+
+```{r}
+dat_tfidf = dat %>%
+  count(reviewer_recommended, word) %>%
+  bind_tf_idf(term = word, document = reviewer_recommended, n = n)
+dat_tfidf %>% head()
+```
+
+```{r}
+plot_dt = dat_tfidf %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word))))
+
+plot_dt %>%
+  group_by(reviewer_recommended) %>%
+  top_n(10) %>%
+  ungroup() %>%
+  mutate(word = reorder_within(word, tf_idf, reviewer_recommended)) %>%
+  ggplot(aes(word, tf_idf)) +
+  geom_col() + 
+  scale_x_reordered() + 
+  labs(x = NULL, y = "tf-idf") + 
+  facet_wrap(~reviewer_recommended, scales = "free") +
+  coord_flip()
+```
+
+
+```{r}
+# training_split = 0.05
+# smp_size = floor(training_split * nrow(dat))
+# dat_index = sample(seq_len(nrow(dat)), size = smp_size)
+# dat_train = as.data.frame(dat[dat_index,])
+# dat_test = as.data.frame(dat[-dat_index,])
+
+
+mod = train(x = as.matrix(dat_dtm_reduced),
+            y = raw_dat$reviewer_recommended,
+            method = "ranger",
+            num.trees = 10,
+            importance = "impurity",
+            trControl = trainControl(method = "oob"))
+
+# tctrl = trainControl(method = 'cv',
+#                      number = 10,
+#                      savePredictions = TRUE,
+#                      classProbs = TRUE)
+# 
+# mod_dt = train(dat_train %>% select(reviewer_recommended), 
+#                 dat_train$reviewer_recommended, 
+#                 method = 'rpart',
+#                 parms = list(split = "information"),
+#                 trControl=tctrl)
+# 
+# pred_dt = predict(mod_dt, dat_test, type = 'prob')
+```
+
+```{r}
+mod$finalModel
+```
+
+
+```{r}
+mod$finalModel %>%
+  # extract variable importance metrics
+  ranger::importance() %>%
+  # convert to a data frame
+  enframe(name = "variable", value = "varimp") %>%
+  top_n(n = 20, wt = varimp) %>%
+  # plot the metrics
+  ggplot(aes(x = fct_reorder(variable, varimp), y = varimp)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Token",
+       y = "Variable importance (higher is more important)")
 ```
 
