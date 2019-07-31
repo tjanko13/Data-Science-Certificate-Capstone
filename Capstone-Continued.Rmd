@@ -2,11 +2,13 @@
 title: "Capstone-Continued"
 author: "Scott Stoltzman"
 date: "7/30/2019"
-output: html_document
+output:
+  html_document:
+    code_folding: "hide"
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, message=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library("tidyverse")
 library("tidytext")
 library("scales")
@@ -81,7 +83,7 @@ modified_sentiment[is.na(modified_sentiment)] = 0 #assumption
 
 ## Data prep
 ```{r}
-training_split = 0.80
+training_split = 0.10
 smp_size = floor(training_split * nrow(raw_dat))
 dat_index = sample(seq_len(nrow(raw_dat)), size = smp_size)
 dat_train = as.data.frame(raw_dat[dat_index,])
@@ -144,7 +146,6 @@ mod_rf = train(dat_dtm_reduced_matrix,
             num.trees = 10,
             importance = "impurity",
             trControl = train_control)
-mod_rf$results
 
 predictions_rf = predict(mod_rf, dat_dtm_reduced_matrix_predict)
 confusionMatrix(predictions_rf, as.factor(can_predict$reviewer_recommended))
