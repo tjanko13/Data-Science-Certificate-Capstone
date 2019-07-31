@@ -169,19 +169,23 @@ confusionMatrix(predictions_logreg, as.factor(can_predict$reviewer_recommended))
 
 ## Naive Bayes
 ```{r}
-# slow, round to integers
-train_control = trainControl(method = 'cv',
-                     number = 10,
-                     savePredictions = TRUE,
-                     classProbs = TRUE)
+# too slow, figure something out!
+# dat_train_mod = ceiling(dat_dtm_reduced_matrix)
+# dat_predict_mod = ceiling(dat_dtm_reduced_matrix_predict)
 
-mod_nb = train(dat_dtm_reduced_matrix, 
-                dat_train$reviewer_recommended, 
-                method = "nb",
-                trControl = train_control)
-
-predictions_nb = predict(mod_nb, dat_dtm_reduced_matrix_predict)
-confusionMatrix(predictions_nb, as.factor(can_predict$reviewer_recommended))
+# train_control = trainControl(method = 'cv',
+#                      number = 10,
+#                      savePredictions = TRUE,
+#                      classProbs = TRUE)
+# 
+# mod_nb = train(dat_dtm_reduced_matrix, 
+#                 dat_train$reviewer_recommended, 
+#                 method = "nb",
+#                 trControl = train_control)
+# 
+# predictions_nb = predict(mod_nb$finalModel, dat_dtm_reduced_matrix_predict,
+#                          type = 'class')
+# confusionMatrix(predictions_nb, as.factor(can_predict$reviewer_recommended))
 ```
 
 # KNN
@@ -195,7 +199,9 @@ mod_knn = train(dat_dtm_reduced_matrix,
                 method = "knn",
                 trControl = train_control)
 
-mod_knn$results
+predictions_knn = predict(mod_knn$finalModel, dat_dtm_reduced_matrix_predict, 
+                          type = 'class')
+confusionMatrix(predictions_knn, as.factor(can_predict$reviewer_recommended))
 ```
 
 ## Neural Network
@@ -210,11 +216,14 @@ mod_nnet = train(dat_dtm_reduced_matrix,
                 trace = FALSE,
                 trControl = train_control)
 
-mod_nnet$results
+predictions_nnet = predict(mod_nnet$finalModel, dat_dtm_reduced_matrix_predict, 
+                          type = 'class')
+confusionMatrix(as.factor(predictions_nnet), as.factor(can_predict$reviewer_recommended))
 ```
 
 
 
+## looking into random forest (if chosen as model, this should be seen)
 ```{r}
 mod_rf$finalModel %>%
   # extract variable importance metrics
