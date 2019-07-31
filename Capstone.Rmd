@@ -560,9 +560,8 @@ head(dat_sentiment)
 
 
 
-
 ```{r}
-training_split = 0.10
+training_split = 0.05
 smp_size = floor(training_split * nrow(raw_dat))
 dat_index = sample(seq_len(nrow(raw_dat)), size = smp_size)
 dat_train = as.data.frame(raw_dat[dat_index,])
@@ -575,8 +574,24 @@ dat = dat_train %>%
   filter(word != 'br') %>%
   filter(word != 'movie') %>%
   filter(word != 'film') %>%
-  mutate(word = SnowballC::wordStem(word))
+  left_join(bing, by = 'word') %>%
+  rename(bing = sentiment) %>%
+  left_join(loughran, by = 'word') %>%
+  rename(loughran = sentiment) %>%
+  left_join(afinn, by = 'word') %>%
+  rename(afinn = value) %>%
+  mutate(word = SnowballC::wordStem(word)) #brings it down to the root word
 
+# this should be done by bigram :)
+dat_sent = dat %>%
+  group_by(id) %>%
+  summarize(sentiment = mean(afinn, na.rm = TRUE))
+
+dat_sent$sentiment[is.na(dat_sent$sentiment)] = 0
+
+dat_train_sent = dat_train %>%
+  left_join(dat_sent, by = 'id')
+  
 dat_dtm = dat %>%
   count(id, word) %>%
   cast_dtm(document = id, term = word, 
@@ -591,10 +606,12 @@ dat_dtm_reduced = tm::removeSparseTerms(dat_dtm, sparse = 0.90)
 #   pull()
 # mod = train(x = cbind(as.matrix(dat_dtm_reduced), haha),
 
-mod = train(x = as.matrix(dat_dtm_reduced),
+dat_dtm_reduced_matrix = cbind(as.matrix(dat_dtm_reduced), data_sentiment = dat_train_sent$sentiment)
+
+mod = train(x = dat_dtm_reduced_matrix,
             y = dat_train$reviewer_recommended,
             method = "ranger",
-            num.trees = 10,
+            num.trees = 5,
             importance = "impurity",
             trControl = trainControl(method = "oob"))
 mod

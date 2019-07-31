@@ -24,13 +24,8 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
   mutate(reviewer_recommended = str_replace(reviewer_recommended, 'positive', 'yes'),
          reviewer_recommended = str_replace(reviewer_recommended, 'negative', 'no')) %>%
   mutate(id = row_number())
-```
 
-
-```{r}
 afinn = get_sentiments("afinn")
-bing = get_sentiments("bing")
-loughran = get_sentiments("loughran")
 ```
 
 ```{r}
@@ -84,17 +79,16 @@ modified_sentiment[is.na(modified_sentiment)] = 0 #assumption
 
 
 
-
+## Data prep
 ```{r}
-training_split = 0.70
+training_split = 0.05
 smp_size = floor(training_split * nrow(raw_dat))
 dat_index = sample(seq_len(nrow(raw_dat)), size = smp_size)
 dat_train = as.data.frame(raw_dat[dat_index,])
 dat_test = as.data.frame(raw_dat[-dat_index,])
 
-tmp = dat_train
 
-dat = tmp %>%
+dat = dat_train %>%
   unnest_tokens(word, review) %>%
   anti_join(stop_words, by = 'word') %>%
   mutate(word = str_extract(word, "[a-z']+")) %>%
@@ -102,9 +96,7 @@ dat = tmp %>%
   filter(word != 'movie') %>%
   filter(word != 'film')
 
-tmp %>% anti_join(modified_sentiment, by = 'id')
-
-dat_sentiment = tmp %>%
+dat_sentiment = dat_train %>%
   left_join(modified_sentiment, by = 'id')
   
 dat_dtm = dat %>%
@@ -116,37 +108,9 @@ dat_dtm_reduced = tm::removeSparseTerms(dat_dtm, sparse = 0.95)
 
 dat_dtm_reduced_matrix = cbind(as.matrix(dat_dtm_reduced), 
                                data_sentiment = dat_sentiment$sentiment)
-
-mod = train(x = dat_dtm_reduced_matrix,
-            y = dat_train$reviewer_recommended,
-            method = "ranger",
-            num.trees = 50,
-            importance = "impurity",
-            trControl = trainControl(method = "oob"))
-mod
 ```
 
-```{r}
-mod$finalModel
-```
-
-
-```{r}
-mod$finalModel %>%
-  # extract variable importance metrics
-  ranger::importance() %>%
-  # convert to a data frame
-  enframe(name = "variable", value = "varimp") %>%
-  top_n(n = 20, wt = varimp) %>%
-  # plot the metrics
-  ggplot(aes(x = fct_reorder(variable, varimp), y = varimp)) +
-  geom_col() +
-  coord_flip() +
-  labs(x = "Token",
-       y = "Variable importance (higher is more important)")
-```
-
-
+## Prepare test / prediction data
 ```{r}
 dat_predict = dat_test %>%
   unnest_tokens(word, review) %>%
@@ -167,7 +131,103 @@ dat_dtm_reduced_predict = tm::removeSparseTerms(dat_dtm_predict, sparse = 0.99)
 
 dat_dtm_reduced_matrix_predict = cbind(as.matrix(dat_dtm_reduced_predict),
                                        data_sentiment = dat_sentiment_predict$sentiment)
-
-predictions = predict(mod, dat_dtm_reduced_matrix_predict)
-confusionMatrix(predictions, as.factor(can_predict$reviewer_recommended))
 ```
+
+
+## Random Forest
+```{r}
+train_control = trainControl(method = "oob")
+
+mod_rf = train(dat_dtm_reduced_matrix,
+            dat_train$reviewer_recommended,
+            method = "ranger",
+            num.trees = 10,
+            importance = "impurity",
+            trControl = train_control)
+mod_rf$results
+
+predictions_rf = predict(mod_rf, dat_dtm_reduced_matrix_predict)
+confusionMatrix(predictions_rf, as.factor(can_predict$reviewer_recommended))
+```
+
+
+## Logistic Regression
+```{r}
+train_control = trainControl(method = 'cv',
+                     savePredictions = TRUE,
+                     classProbs = TRUE)
+
+mod_logreg = train(dat_dtm_reduced_matrix, 
+                dat_train$reviewer_recommended, 
+                method = "glm", 
+                family = "binomial",
+                trControl = train_control)
+
+predictions_logreg = predict(mod_logreg, dat_dtm_reduced_matrix_predict)
+confusionMatrix(predictions_logreg, as.factor(can_predict$reviewer_recommended))
+```
+
+## Naive Bayes
+```{r}
+# slow, round to integers
+train_control = trainControl(method = 'cv',
+                     number = 10,
+                     savePredictions = TRUE,
+                     classProbs = TRUE)
+
+mod_nb = train(dat_dtm_reduced_matrix, 
+                dat_train$reviewer_recommended, 
+                method = "nb",
+                trControl = train_control)
+
+predictions_nb = predict(mod_nb, dat_dtm_reduced_matrix_predict)
+confusionMatrix(predictions_nb, as.factor(can_predict$reviewer_recommended))
+```
+
+# KNN
+```{r}
+train_control = trainControl(method = 'cv',
+                     savePredictions = TRUE,
+                     classProbs = TRUE)
+
+mod_knn = train(dat_dtm_reduced_matrix, 
+                dat_train$reviewer_recommended, 
+                method = "knn",
+                trControl = train_control)
+
+mod_knn$results
+```
+
+## Neural Network
+```{r, message=FALSE}
+train_control = trainControl(method = 'cv',
+                     savePredictions = TRUE,
+                     classProbs = TRUE)
+
+mod_nnet = train(dat_dtm_reduced_matrix, 
+                dat_train$reviewer_recommended, 
+                method = "nnet",
+                trace = FALSE,
+                trControl = train_control)
+
+mod_nnet$results
+```
+
+
+
+```{r}
+mod_rf$finalModel %>%
+  # extract variable importance metrics
+  ranger::importance() %>%
+  # convert to a data frame
+  enframe(name = "variable", value = "varimp") %>%
+  top_n(n = 20, wt = varimp) %>%
+  # plot the metrics
+  ggplot(aes(x = fct_reorder(variable, varimp), y = varimp)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Token",
+       y = "Variable importance (higher is more important)")
+```
+
+
