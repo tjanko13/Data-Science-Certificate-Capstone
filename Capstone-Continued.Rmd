@@ -50,12 +50,13 @@ dat_sentiment = raw_dat %>%
   select(-id, -review)
 
 dat_sentiment %>% 
-  ggplot(aes(x = swear_words)) +
-  geom_density(aes(col=reviewer_recommended, fill=reviewer_recommended), alpha=0.5)
+  ggplot(aes(x = sentiment)) +
+  geom_density(aes(col=reviewer_recommended, fill=reviewer_recommended), alpha=0.5) + 
+  ggtitle('Word "Love" in Review')
 ```
 
 ```{r}
-training_split = 0.70
+training_split = 0.75
 smp_size = floor(training_split * nrow(dat_sentiment))
 dat_index = sample(seq_len(nrow(dat_sentiment)), size = smp_size)
 dat_train = as.data.frame(dat_sentiment[dat_index,])
@@ -68,7 +69,7 @@ train_control = trainControl(method = "oob")
 mod_rf = train(dat_train %>% select(-reviewer_recommended),
             dat_train$reviewer_recommended,
             method = "ranger",
-            num.trees = 10,
+            num.trees = 50,
             importance = "impurity",
             trControl = train_control)
 
