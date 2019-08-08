@@ -9,11 +9,13 @@ output:
 
 ```{r setup, include=FALSE, warning=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library("stringi")
 library("tidyverse")
 library("tidytext")
 library("scales")
 library('caret')
 library('SnowballC')
+library('syuzhet')
 data("stop_words")
 set.seed(123)
 ```
@@ -26,205 +28,54 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
   mutate(reviewer_recommended = str_replace(reviewer_recommended, 'positive', 'yes'),
          reviewer_recommended = str_replace(reviewer_recommended, 'negative', 'no')) %>%
   mutate(id = row_number())
-
-afinn = get_sentiments("afinn")
 ```
 
 ```{r}
-dat_bigrams = raw_dat %>%
-  unnest_tokens(bigram, review, token = "ngrams", n = 2)
-
-bigrams_separated = dat_bigrams %>%
-  separate(bigram, c("word1", "word2"), sep = " ")
-
-custom_stop_words = c("br")
-
-bigrams_filtered = bigrams_separated %>%
-  filter(!word1 %in% stop_words$word) %>%
-  filter(!word2 %in% stop_words$word) %>%
-  filter(!word1 %in% custom_stop_words) %>%
-  filter(!word2 %in% custom_stop_words)
-
-bigram_counts = bigrams_filtered %>%
-  count(word1, word2, sort = TRUE)
+# Swear words:
+swear_words = paste(c('shit', 'fuck', 'dick', 'crap'), collapse = '|')
 ```
 
 
 ```{r}
-negation_words <- c("not", "no", "never", "without")
+dat_sentiment = raw_dat %>% 
+  mutate(number_of_words = stri_count(review, regex="\\S+"),
+         number_of_letters = length(review),
+         avg_word_length = number_of_letters / number_of_words,
+         sentiment = get_sentiment(review),
+         wrd_hate = as.numeric(str_detect(review, 'hate')),
+         wrd_love = as.numeric(str_detect(review, 'love')),
+         wrd_waste = as.numeric(str_detect(review, 'waste')),
+         wrd_worth = as.numeric(str_detect(review, 'worth')),
+         swr_wrds = as.numeric(str_detect(review, swear_words))) %>%
+  select(-id, -review)
 
-negated_words <- bigrams_separated %>%
-  filter(word1 %in% negation_words) %>%
-  inner_join(afinn, by = c(word2 = "word")) %>%
-  count(word1, word2, value, sort = TRUE) %>%
-  left_join(bigrams_separated, by = c('word1' = 'word1', 'word2' = 'word2')) %>%
-  group_by(id) %>%
-  summarize(sentiment = mean(value))
-
-non_negated_words = bigrams_separated %>%
-  anti_join(negated_words, by = 'id') %>%
-  inner_join(afinn, by = c(word2 = "word")) %>%
-  count(word1, word2, value, sort = TRUE) %>%
-  left_join(bigrams_separated, by = c('word1' = 'word1', 'word2' = 'word2')) %>%
-  group_by(id) %>%
-  summarize(sentiment = mean(value))
-
-modified_sentiment_prep = bind_rows(negated_words, non_negated_words) %>%
-  group_by(id) %>%
-  summarize(sentiment = mean(sentiment))
-
-modified_sentiment = tibble(id = 1:max(raw_dat$id)) %>%
-  left_join(modified_sentiment_prep, by = 'id')
-
-modified_sentiment[is.na(modified_sentiment)] = 0 #assumption
+dat_sentiment %>% 
+  ggplot(aes(x = swear_words)) +
+  geom_density(aes(col=reviewer_recommended, fill=reviewer_recommended), alpha=0.5)
 ```
 
-
-
-## Data prep
 ```{r}
-training_split = 0.10
-smp_size = floor(training_split * nrow(raw_dat))
-dat_index = sample(seq_len(nrow(raw_dat)), size = smp_size)
-dat_train = as.data.frame(raw_dat[dat_index,])
-dat_test = as.data.frame(raw_dat[-dat_index,])
-
-
-dat = dat_train %>%
-  unnest_tokens(word, review) %>%
-  anti_join(stop_words, by = 'word') %>%
-  mutate(word = str_extract(word, "[a-z']+")) %>%
-  filter(word != 'br') %>%
-  filter(word != 'movie') %>%
-  filter(word != 'film')
-
-dat_sentiment = dat_train %>%
-  left_join(modified_sentiment, by = 'id')
-  
-dat_dtm = dat %>%
-  count(id, word) %>%
-  cast_dtm(document = id, term = word, 
-           value = n, weighting = tm::weightTfIdf)
-
-dat_dtm_reduced = tm::removeSparseTerms(dat_dtm, sparse = 0.95)
-
-dat_dtm_reduced_matrix = cbind(as.matrix(dat_dtm_reduced), 
-                               data_sentiment = dat_sentiment$sentiment)
+training_split = 0.70
+smp_size = floor(training_split * nrow(dat_sentiment))
+dat_index = sample(seq_len(nrow(dat_sentiment)), size = smp_size)
+dat_train = as.data.frame(dat_sentiment[dat_index,])
+dat_test = as.data.frame(dat_sentiment[-dat_index,])
 ```
 
-## Prepare test / prediction data
-```{r}
-dat_predict = dat_test %>%
-  unnest_tokens(word, review) %>%
-  filter(word %in% dat_dtm_reduced$dimnames$Terms)
-
-can_predict = dat_test %>%
-  filter(id %in% unique(dat_predict$id)) 
-
-dat_sentiment_predict = can_predict %>%
-  left_join(modified_sentiment, by = 'id')
-
-dat_dtm_predict = dat_predict %>%
-  count(id, word) %>%
-  cast_dtm(document = id, term = word, 
-           value = n, weighting = tm::weightTfIdf)
-
-dat_dtm_reduced_predict = tm::removeSparseTerms(dat_dtm_predict, sparse = 0.99)
-
-dat_dtm_reduced_matrix_predict = cbind(as.matrix(dat_dtm_reduced_predict),
-                                       data_sentiment = dat_sentiment_predict$sentiment)
-```
-
-
-## Random Forest
 ```{r}
 train_control = trainControl(method = "oob")
 
-mod_rf = train(dat_dtm_reduced_matrix,
+mod_rf = train(dat_train %>% select(-reviewer_recommended),
             dat_train$reviewer_recommended,
             method = "ranger",
             num.trees = 10,
             importance = "impurity",
             trControl = train_control)
 
-predictions_rf = predict(mod_rf, dat_dtm_reduced_matrix_predict)
-confusionMatrix(predictions_rf, as.factor(can_predict$reviewer_recommended))
+predictions_rf = predict(mod_rf, dat_test)
+confusionMatrix(predictions_rf, as.factor(dat_test$reviewer_recommended))
 ```
 
-
-## Logistic Regression
-```{r}
-train_control = trainControl(method = 'cv',
-                     savePredictions = TRUE,
-                     classProbs = TRUE)
-
-mod_logreg = train(dat_dtm_reduced_matrix, 
-                dat_train$reviewer_recommended, 
-                method = "glm", 
-                family = "binomial",
-                trControl = train_control)
-
-predictions_logreg = predict(mod_logreg, dat_dtm_reduced_matrix_predict)
-confusionMatrix(predictions_logreg, as.factor(can_predict$reviewer_recommended))
-```
-
-## Naive Bayes
-```{r}
-# too slow, figure something out!
-# dat_train_mod = ceiling(dat_dtm_reduced_matrix)
-# dat_predict_mod = ceiling(dat_dtm_reduced_matrix_predict)
-
-# train_control = trainControl(method = 'cv',
-#                      number = 10,
-#                      savePredictions = TRUE,
-#                      classProbs = TRUE)
-# 
-# mod_nb = train(dat_dtm_reduced_matrix, 
-#                 dat_train$reviewer_recommended, 
-#                 method = "nb",
-#                 trControl = train_control)
-# 
-# predictions_nb = predict(mod_nb$finalModel, dat_dtm_reduced_matrix_predict,
-#                          type = 'class')
-# confusionMatrix(predictions_nb, as.factor(can_predict$reviewer_recommended))
-```
-
-# KNN
-```{r}
-train_control = trainControl(method = 'cv',
-                     savePredictions = TRUE,
-                     classProbs = TRUE)
-
-mod_knn = train(dat_dtm_reduced_matrix, 
-                dat_train$reviewer_recommended, 
-                method = "knn",
-                trControl = train_control)
-
-predictions_knn = predict(mod_knn$finalModel, dat_dtm_reduced_matrix_predict, 
-                          type = 'class')
-confusionMatrix(predictions_knn, as.factor(can_predict$reviewer_recommended))
-```
-
-## Neural Network
-```{r, message=FALSE}
-train_control = trainControl(method = 'cv',
-                     savePredictions = TRUE,
-                     classProbs = TRUE)
-
-mod_nnet = train(dat_dtm_reduced_matrix, 
-                dat_train$reviewer_recommended, 
-                method = "nnet",
-                trace = FALSE,
-                trControl = train_control)
-
-predictions_nnet = predict(mod_nnet$finalModel, dat_dtm_reduced_matrix_predict, 
-                          type = 'class')
-confusionMatrix(as.factor(predictions_nnet), as.factor(can_predict$reviewer_recommended))
-```
-
-
-
-## looking into random forest (if chosen as model, this should be seen)
 ```{r}
 mod_rf$finalModel %>%
   # extract variable importance metrics
@@ -239,5 +90,7 @@ mod_rf$finalModel %>%
   labs(x = "Token",
        y = "Variable importance (higher is more important)")
 ```
+
+
 
 
