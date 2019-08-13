@@ -1,0 +1,117 @@
+---
+title: "In Class Example"
+author: "Scott Stoltzman"
+date: "8/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('tidyverse')
+library('tidytext')
+library('syuzhet')
+library('caret')
+data("stop_words")
+set.seed(123)
+```
+
+## Load Data
+```{r}
+raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.csv') %>%
+  rename(reviewer_recommended = sentiment) %>%
+  mutate(reviewer_recommended = str_replace(reviewer_recommended, 'positive', 'yes'),
+         reviewer_recommended = str_replace(reviewer_recommended, 'negative', 'no')) %>%
+  mutate(id = row_number())
+  
+
+raw_dat = raw_dat %>% sample_n(1000)
+```
+
+## Wrangle Data
+```{r}
+dat = raw_dat %>%
+  mutate(sentiment = get_sentiment(review),
+         number_of_words = stri_count(review, regex="\\S+"),
+         number_of_letters = length(review),
+         avg_word_length = number_of_letters / number_of_words,
+         wrd_hate = str_detect(review, 'hate')) %>%
+  select(id, reviewer_recommended, sentiment, 
+         number_of_words, number_of_letters,avg_word_length,
+         wrd_hate)
+
+head(dat)
+```
+
+## EDA
+```{r}
+dat %>%
+  ggplot(aes(x = sentiment, col = reviewer_recommended, fill = reviewer_recommended)) +
+  geom_density(alpha = 0.5)
+```
+
+## Text wrangling
+```{r}
+text_dat = raw_dat %>%
+  unnest_tokens(word, review) %>%
+  anti_join(stop_words, by = 'word') %>%
+  group_by(reviewer_recommended, id, word) %>%
+  summarize(n = 1) %>%
+  group_by(reviewer_recommended, word) %>%
+  summarize(n = n()) %>%
+  arrange(-n) %>%
+  top_n(100)
+
+head(text_dat)
+```
+
+## Join dat & text_dat
+```{r}
+# TODO
+# Will become final_dat
+# placeholder for now is called final_dat = dat
+final_dat = dat %>%
+  select(-id)
+```
+
+
+
+## Build model
+
+```{r}
+training_split = 0.75
+smp_size = floor(training_split * nrow(final_dat))
+dat_index = sample(seq_len(nrow(final_dat)), size = smp_size)
+dat_train = as.data.frame(final_dat[dat_index,])
+dat_test = as.data.frame(final_dat[-dat_index,])
+```
+
+
+```{r}
+train_control = trainControl(method = "oob")
+
+mod_rf = train(dat_train %>% select(-reviewer_recommended),
+            dat_train$reviewer_recommended,
+            method = "ranger",
+            num.trees = 50,
+            importance = "impurity",
+            trControl = train_control)
+
+predictions_rf = predict(mod_rf, dat_test)
+confusionMatrix(predictions_rf, as.factor(dat_test$reviewer_recommended))
+```
+
+
+```{r}
+mod_rf$finalModel %>%
+  # extract variable importance metrics
+  ranger::importance() %>%
+  # convert to a data frame
+  enframe(name = "variable", value = "varimp") %>%
+  top_n(n = 20, wt = varimp) %>%
+  # plot the metrics
+  ggplot(aes(x = fct_reorder(variable, varimp), y = varimp)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Token",
+       y = "Variable importance (higher is more important)")
+```
