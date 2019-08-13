@@ -4,7 +4,7 @@ author: "Scott Stoltzman"
 date: "7/30/2019"
 output:
   html_document:
-    code_folding: "hide"
+    code_folding: "show"
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, message=FALSE}
@@ -20,6 +20,8 @@ data("stop_words")
 set.seed(123)
 ```
 
+
+# Load Data
 ```{r}
 # raw_dat = read_csv('IMDB Dataset.csv') # can use this if you need to have the file stored locally, just place it into the top level directory of this project
 # change to reviewer recommended yes/no for ease of differentiating sentiment later on
@@ -30,9 +32,15 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
   mutate(id = row_number())
 ```
 
+#
 ```{r}
 # Swear words:
-swear_words = paste(c('shit', 'fuck', 'dick', 'crap'), collapse = '|')
+swear_words_df = read_csv('SwearWords.csv')
+swear_words = c()
+for(i in swear_words_df$arse){
+  swear_words = c(swear_words, i)
+  }
+swear_words = paste(swear_words, collapse('|'))
 ```
 
 
@@ -52,7 +60,7 @@ dat_sentiment = raw_dat %>%
 dat_sentiment %>% 
   ggplot(aes(x = sentiment)) +
   geom_density(aes(col=reviewer_recommended, fill=reviewer_recommended), alpha=0.5) + 
-  ggtitle('Word "Love" in Review')
+  ggtitle('Review Sentiment Density')
 ```
 
 ```{r}
@@ -93,5 +101,17 @@ mod_rf$finalModel %>%
 ```
 
 
-
+## Neural Network
+```{r, message=FALSE}
+train_control = trainControl(method = 'cv',
+                     savePredictions = TRUE,
+                     classProbs = TRUE)
+mod_nnet = train(dat_dtm_reduced_matrix, 
+                dat_train$reviewer_recommended, 
+                method = "nnet",
+                trace = FALSE,
+                trControl = train_control)
+predictions_nnet = predict(mod_nnet$finalModel, dat_dtm_reduced_matrix_predict, 
+                          type = 'class')
+confusionMatrix(as.factor(predictions_nnet), as.factor(can_predict$reviewer_recommended))
 
