@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library('stringi')
 library('tidyverse')
 library('tidytext')
 library('syuzhet')
@@ -24,7 +25,8 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
   mutate(id = row_number())
   
 
-raw_dat = raw_dat %>% sample_n(1000)
+raw_dat = raw_dat %>% 
+  sample_n(10000)
 ```
 
 ## Wrangle Data
@@ -51,26 +53,44 @@ dat %>%
 
 ## Text wrangling
 ```{r}
-text_dat = raw_dat %>%
+text_dat_raw = raw_dat %>%
   unnest_tokens(word, review) %>%
   anti_join(stop_words, by = 'word') %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  filter(word != 'br') %>%
+  filter(word != 'movie') %>%
+  filter(word != 'film')
+
+text_dat_grouped = text_dat_raw %>%
   group_by(reviewer_recommended, id, word) %>%
   summarize(n = 1) %>%
   group_by(reviewer_recommended, word) %>%
   summarize(n = n()) %>%
-  arrange(-n) %>%
-  top_n(100)
+  group_by(word) %>%
+  mutate(pct_of_total = n / sum(n)) %>%
+  ungroup() %>%
+  filter(n > 100, 
+         pct_of_total > 0.70) %>% # must be in +70% favor of one review type
+  select(word)
 
-head(text_dat)
+text_dat_spread = text_dat_grouped %>% 
+  left_join(text_dat_raw, by = 'word') %>%
+  select(id, word) %>%
+  distinct(id, word) %>%
+  mutate(n = 1) %>%
+  spread(key = word, value = n)
+
+head(text_dat_spread)
 ```
 
 ## Join dat & text_dat
 ```{r}
-# TODO
-# Will become final_dat
-# placeholder for now is called final_dat = dat
 final_dat = dat %>%
-  select(-id)
+  left_join(text_dat_spread, by = 'id')
+
+final_dat[is.na(final_dat)] = 0
+
+head(final_dat)
 ```
 
 
@@ -78,11 +98,15 @@ final_dat = dat %>%
 ## Build model
 
 ```{r}
-training_split = 0.75
-smp_size = floor(training_split * nrow(final_dat))
-dat_index = sample(seq_len(nrow(final_dat)), size = smp_size)
-dat_train = as.data.frame(final_dat[dat_index,])
-dat_test = as.data.frame(final_dat[-dat_index,])
+dat_train = final_dat %>%
+  group_by(reviewer_recommended) %>% # evenly balanced data set
+  sample_n(1000) %>%
+  ungroup()
+
+dat_test = anti_join(final_dat, dat_train, by = 'id')
+  
+dat_test = dat_test %>% select(-id)
+dat_train = dat_train %>% select(-id)
 ```
 
 
