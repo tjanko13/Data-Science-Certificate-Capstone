@@ -25,7 +25,7 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
   mutate(id = row_number())
   
 
-raw_dat = raw_dat %>% 
+raw_dat = raw_dat %>%
   sample_n(10000)
 ```
 
@@ -34,12 +34,10 @@ raw_dat = raw_dat %>%
 dat = raw_dat %>%
   mutate(sentiment = get_sentiment(review),
          number_of_words = stri_count(review, regex="\\S+"),
-         number_of_letters = length(review),
-         avg_word_length = number_of_letters / number_of_words,
-         wrd_hate = str_detect(review, 'hate')) %>%
+         number_of_letters = nchar(review),
+         avg_word_length = number_of_letters / number_of_words) %>%
   select(id, reviewer_recommended, sentiment, 
-         number_of_words, number_of_letters,avg_word_length,
-         wrd_hate)
+         number_of_words, number_of_letters,avg_word_length)
 
 head(dat)
 ```
@@ -113,20 +111,20 @@ dat_train = dat_train %>% select(-id)
 ```{r}
 train_control = trainControl(method = "oob")
 
-mod_rf = train(dat_train %>% select(-reviewer_recommended),
+model_rf = train(dat_train %>% select(-reviewer_recommended),
             dat_train$reviewer_recommended,
             method = "ranger",
             num.trees = 50,
             importance = "impurity",
             trControl = train_control)
 
-predictions_rf = predict(mod_rf, dat_test)
+predictions_rf = predict(model_rf, dat_test)
 confusionMatrix(predictions_rf, as.factor(dat_test$reviewer_recommended))
 ```
 
 
 ```{r}
-mod_rf$finalModel %>%
+model_rf$finalModel %>%
   # extract variable importance metrics
   ranger::importance() %>%
   # convert to a data frame
