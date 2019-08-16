@@ -25,8 +25,8 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
   mutate(id = row_number())
   
 
-raw_dat = raw_dat %>%
-  sample_n(10000)
+# raw_dat = raw_dat %>%
+#   sample_n(10000)
 ```
 
 ## Wrangle Data
@@ -98,7 +98,7 @@ head(final_dat)
 ```{r}
 dat_train = final_dat %>%
   group_by(reviewer_recommended) %>% # evenly balanced data set
-  sample_n(1000) %>%
+  sample_n(20000) %>%
   ungroup()
 
 dat_test = anti_join(final_dat, dat_train, by = 'id')
@@ -137,3 +137,11 @@ model_rf$finalModel %>%
   labs(x = "Token",
        y = "Variable importance (higher is more important)")
 ```
+
+## Save models and data setup
+```{r}
+model_input_df = dat_train[0,]
+save(model_input_df, file = 'models/model_input_df.rda')
+save(model_rf, file = 'models/model_rf.rda')
+```
+
