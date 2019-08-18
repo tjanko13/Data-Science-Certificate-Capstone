@@ -24,9 +24,11 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
          reviewer_recommended = str_replace(reviewer_recommended, 'negative', 'no')) %>%
   mutate(id = row_number())
   
+n_total_sample = 3000 # Reduces data size for faster development
+n_balance = 1000 # Balances data set, cannot be more than n_total_sample / number of classes. i.e. reviewer_recommended has "yes" and "no" (2 classes)
 
-# raw_dat = raw_dat %>%
-#   sample_n(10000)
+raw_dat = raw_dat %>%
+  sample_n(n_total_sample)
 ```
 
 ## Wrangle Data
@@ -98,7 +100,7 @@ head(final_dat)
 ```{r}
 dat_train = final_dat %>%
   group_by(reviewer_recommended) %>% # evenly balanced data set
-  sample_n(20000) %>%
+  sample_n(n_balance) %>%
   ungroup()
 
 dat_test = anti_join(final_dat, dat_train, by = 'id')
