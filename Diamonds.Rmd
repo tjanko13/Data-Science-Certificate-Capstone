@@ -93,21 +93,3 @@ for(i in 1:length(all_models)){
 
 
 
-
-```{r}
-models_df = tibble(model = all_models) %>%
-  mutate(predictions = predict(model, dat_test))
-```
-
-
-
-```{r}
-method = c()
-accuracy = c()
-for(i in 1:nrow(models_df)){
-  method = c(method, models_df$model[[i]]$method)
-  accuracy = c(accuracy, models_df$model[[i]]$results$Accuracy[1])
-}
-model_accuracy = tibble(model = method, accuracy = accuracy) %>% arrange(-accuracy)
-model_accuracy
-```
