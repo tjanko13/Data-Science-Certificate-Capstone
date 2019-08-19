@@ -54,41 +54,6 @@ dat_train = dat_train %>% select(-id)
 train_control = caret::trainControl(method='cv', number = 10)
 metric = "Accuracy"
 
-set.seed(7)
-fit.lda <- train(price~., data=dat_train, method="lda", metric=metric, trControl=train_control)
-
-# CART
-set.seed(7)
-fit.cart <- train(price~., data=dat_train, method="rpart", metric=metric, trControl=train_control)
-# kNN
-set.seed(7)
-fit.knn <- train(price~., data=dat_train, method="knn", metric=metric, trControl=train_control)
-
-# SVM
-set.seed(7)
-fit.svm <- train(price~., data=dat_train, method="svmRadial", metric=metric, trControl=train_control)
-
-# Random Forest
-set.seed(7)
-fit.rf <- train(price~., data=dat_train, method="rf", metric=metric, trControl=train_control)
-
-# Neural Net
-set.seed(7)
-fit.nnet = train(price~., data=dat_train, method='nnet', metric=metric, trainControl=train_control)
-
-all_models = list(fit.lda, fit.cart, fit.knn, fit.svm, fit.rf, fit.nnet)
-```
-
-
-```{r}
-for(i in 1:length(all_models)){
-  print("======================================================")
-  print(all_models[[i]]$modelInfo$label)
-  predictions = predict(all_models[[i]], dat_test)
-  print(confusionMatrix(predictions, as.factor(dat_test$price)))
-  print("======================================================")
-}
-
 ```
 
 
