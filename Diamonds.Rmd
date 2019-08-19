@@ -1,0 +1,113 @@
+---
+title: "Diamonds Example Machine Learning"
+author: "Scott Stoltzman"
+date: "8/19/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(tidyverse)
+```
+
+
+```{r}
+data(diamonds)
+final_dat = diamonds %>%
+  select(-x, -y, -z) %>%
+  mutate(price = if_else(price < 5000, "low", if_else(price > 10000, "high", "medium"))) %>%
+  mutate(id = row_number())
+```
+
+```{r}
+# option 1
+training_split = 0.80
+smp_size = floor(training_split * nrow(final_dat))
+dat_index = sample(seq_len(nrow(final_dat)), size = smp_size)
+dat_train = as.data.frame(final_dat[dat_index,])
+dat_test = as.data.frame(final_dat[-dat_index,])
+```
+
+````{r}
+# option 2
+sample_n = final_dat %>%
+  group_by(price) %>% 
+  count() %>%
+  mutate(min_n = min(n)) %>%
+  ungroup() %>%
+  pull(min_n) %>%
+  min()
+
+dat_train = final_dat %>%
+  group_by(price) %>%
+  sample_n(sample_n * 0.8) %>%
+  ungroup()
+
+dat_test = anti_join(final_dat, dat_train, by = 'id')
+  
+dat_test = dat_test %>% select(-id)
+dat_train = dat_train %>% select(-id)
+```
+
+```{r models, message=FALSE, warning=FALSE}
+train_control = caret::trainControl(method='cv', number = 10)
+metric = "Accuracy"
+
+set.seed(7)
+fit.lda <- train(price~., data=dat_train, method="lda", metric=metric, trControl=train_control)
+
+# CART
+set.seed(7)
+fit.cart <- train(price~., data=dat_train, method="rpart", metric=metric, trControl=train_control)
+# kNN
+set.seed(7)
+fit.knn <- train(price~., data=dat_train, method="knn", metric=metric, trControl=train_control)
+
+# SVM
+set.seed(7)
+fit.svm <- train(price~., data=dat_train, method="svmRadial", metric=metric, trControl=train_control)
+
+# Random Forest
+set.seed(7)
+fit.rf <- train(price~., data=dat_train, method="rf", metric=metric, trControl=train_control)
+
+# Neural Net
+set.seed(7)
+fit.nnet = train(price~., data=dat_train, method='nnet', metric=metric, trainControl=train_control)
+
+all_models = list(fit.lda, fit.cart, fit.knn, fit.svm, fit.rf, fit.nnet)
+```
+
+
+```{r}
+for(i in 1:length(all_models)){
+  print("======================================================")
+  print(all_models[[i]]$modelInfo$label)
+  predictions = predict(all_models[[i]], dat_test)
+  print(confusionMatrix(predictions, as.factor(dat_test$price)))
+  print("======================================================")
+}
+
+```
+
+
+
+
+```{r}
+models_df = tibble(model = all_models) %>%
+  mutate(predictions = predict(model, dat_test))
+```
+
+
+
+```{r}
+method = c()
+accuracy = c()
+for(i in 1:nrow(models_df)){
+  method = c(method, models_df$model[[i]]$method)
+  accuracy = c(accuracy, models_df$model[[i]]$results$Accuracy[1])
+}
+model_accuracy = tibble(model = method, accuracy = accuracy) %>% arrange(-accuracy)
+model_accuracy
+```
