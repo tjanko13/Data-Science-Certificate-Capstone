@@ -12,6 +12,8 @@ library('tidyverse')
 library('tidytext')
 library('syuzhet')
 library('caret')
+library('e1071')
+library('ranger')
 data("stop_words")
 set.seed(123)
 ```
@@ -24,11 +26,12 @@ raw_dat = read_csv('https://foco-ds-portal-files.s3.amazonaws.com/IMDB+Dataset.c
          reviewer_recommended = str_replace(reviewer_recommended, 'negative', 'no')) %>%
   mutate(id = row_number())
   
-n_total_sample = 3000 # Reduces data size for faster development
-n_balance = 1000 # Balances data set, cannot be more than n_total_sample / number of classes. i.e. reviewer_recommended has "yes" and "no" (2 classes)
 
-raw_dat = raw_dat %>%
-  sample_n(n_total_sample)
+n_balance = 20000 # Balances data set, cannot be more than n_total_sample / number of classes. i.e. reviewer_recommended has "yes" and "no" (2 classes)
+
+# n_total_sample = 10000 # Reduces data size for faster development
+# raw_dat = raw_dat %>%
+#   sample_n(n_total_sample)
 ```
 
 ## Wrangle Data
@@ -111,17 +114,17 @@ dat_train = dat_train %>% select(-id)
 
 
 ```{r}
-train_control = trainControl(method = "oob")
+train_control = caret::trainControl(method = "oob")
 
-model_rf = train(dat_train %>% select(-reviewer_recommended),
+model_rf = caret::train(dat_train %>% select(-reviewer_recommended),
             dat_train$reviewer_recommended,
             method = "ranger",
             num.trees = 50,
             importance = "impurity",
             trControl = train_control)
 
-predictions_rf = predict(model_rf, dat_test)
-confusionMatrix(predictions_rf, as.factor(dat_test$reviewer_recommended))
+predictions_rf = stats::predict(model_rf, dat_test)
+caret::confusionMatrix(predictions_rf, as.factor(dat_test$reviewer_recommended))
 ```
 
 
@@ -145,5 +148,9 @@ model_rf$finalModel %>%
 model_input_df = dat_train[0,]
 save(model_input_df, file = 'models/model_input_df.rda')
 save(model_rf, file = 'models/model_rf.rda')
+```
+
+```{r}
+
 ```
 

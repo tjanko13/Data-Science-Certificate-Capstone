@@ -13,7 +13,7 @@ load('models/model_input_df.rda')
 load('models/model_rf.rda')
 
 
-input_dat = tibble(id = 1, review = "Poor execution of what was a beautiful and wonderful book!")
+input_dat = tibble(id = 1, review = "This is a fantastic movie!!")
 
 dat = input_dat %>%
   mutate(sentiment = get_sentiment(review),
@@ -36,8 +36,7 @@ text_dat = input_dat %>%
 
 prep_dat = dat %>% left_join(text_dat, by = 'id') %>% select(-id)
 final_dat = model_input_df %>% 
-  bind_rows(prep_dat) %>% 
-  select(-id)
+  bind_rows(prep_dat)
 final_dat[is.na(final_dat)] = 0
 
 predict(model_rf, final_dat)
