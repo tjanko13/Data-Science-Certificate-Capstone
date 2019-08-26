@@ -1,0 +1,30 @@
+---
+title: "Diamonds Example Machine Learning"
+author: "Scott Stoltzman"
+date: "8/19/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(tidyverse)
+```
+
+
+```{r}
+data(diamonds)
+final_dat = diamonds %>%
+  select(-x, -y, -z) %>%
+  mutate(price = if_else(price < 5000, "low", if_else(price > 10000, "high", "medium"))) %>%
+  mutate(id = row_number())
+head(final_dat)
+```
+
+```{r}
+# Take it from here!
+```
+
+
+
+
