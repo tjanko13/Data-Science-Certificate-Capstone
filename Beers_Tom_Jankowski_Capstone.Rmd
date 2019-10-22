@@ -1,0 +1,236 @@
+---
+title: "Beers_Tom_Jankowski_Capstone.Rmd"
+author: "Tom_Jankowski"
+date: "10/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages / Libraries
+#install.packages("ranger")
+#install.packages("rpart")
+library("tidyverse")
+library("rattle")
+library("rpart")
+library("caret")
+library("ranger")
+library("lubridate")
+#library(anytime)
+# Set Seed
+set.seed(123)
+```
+
+# Dataset obtained from data.world. Beer Advocate beer ratings.
+```{r cars}
+beer_ratings <- readr::read_csv("https://foco-ds-portal-files.s3.amazonaws.com/beer_reviews_beer_advocate.csv")
+```
+
+```{r}
+dat <- beer_ratings
+head(dat, 10)
+```
+
+# Glimpse 
+```{r}
+glimpse(dat)
+```
+
+# Exploration  
+```{r}
+dat %>% 
+  sample_n(1000) %>% 
+  group_by(beer_style) %>% 
+  count() %>% 
+  ggplot(aes(x = beer_style, y = n)) +
+  geom_col() + 
+  geom_label(aes(label = scales::percent(n / sum(n)))) +
+  coord_flip()
+```
+
+# Top 10 reviewed breweries 
+```{r}
+top_ten_breweries <- dat %>% 
+  count(beer_beerid, brewery_name, sort = TRUE)
+
+head(top_ten_breweries, 10)
+```
+# Top 10 beers 
+```{r}
+top_ten_beers <- dat %>% 
+  count(beer_beerid, beer_name, sort = TRUE)
+
+head(top_ten_beers, 10)
+```
+
+
+```{r}
+dat %>%
+  ggplot(aes(x=review_overall)) +
+  geom_density(fill = 'red', alpha = 0.5)
+```
+
+
+# EDA Actions TO DO:
+
+ - Rearrange the columns for easier viewing
+ - impute the missing abv rows
+ - Explore the ratings columns
+ 
+ 
+ 
+# Descriptive Statistics (Summary) 
+```{r}
+summary(dat)
+```
+
+# Total Rows
+```{r}
+dat %>%
+  group_by(review_profilename) %>% 
+  summarise(n=n())
+```
+
+# Look at NAs
+```{r}
+colSums(is.na(dat))
+```
+
+# NAs by proportion
+```{r}
+round(colSums(is.na(dat)) / nrow(dat), 4)
+```
+
+# EDA - Clean-up NAs
+```{r}
+dat_na_clean <- dat %>% 
+  filter(!is.na(brewery_name)) %>% 
+  filter(!is.na(review_profilename))
+```
+
+# Mean of beer_abv 
+```{r}
+mean(dat_na_clean$beer_abv, na.rm = T)
+```
+
+# Count beer_abv
+```{r}
+dat_na_clean %>% 
+  group_by(beer_abv) %>% 
+  count()
+```
+
+# Convert Epoch date to Date/Time using lubridate
+```{r}
+dat_date_time <- dat_na_clean %>% 
+  mutate(date_time = lubridate::as_datetime(dat_na_clean$review_time))
+head(dat_date_time)
+```
+
+
+# review distributions - values 
+```{r}
+ratings_range <- c(1.0,1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0)
+dat_na_clean %>% 
+  select(review_aroma)
+```
+
+
+
+# beer_abv distribution 
+```{r}
+dat_na_clean %>% 
+  ggplot() +
+  geom_histogram(mapping = aes(x=beer_abv), binwidth = .05)
+```
+
+
+# Count categorical variable levels
+```{r}
+dat_na_clean %>% 
+  ggplot() +
+  geom_density(aes(x = review_overall), fill = 'red', alpha = 0.4) +
+  geom_density(aes(x = review_aroma), fill = 'blue', alpha = 0.4) +
+  geom_density(aes(x = review_appearance), fill = 'grey', alpha = 0.4) +
+  geom_density(aes(x = review_taste), fill = 'green', alpha = 0.4) +
+  geom_density(aes(x = review_palate), fill = 'yellow', alpha = 0.4)
+```
+
+```{r}
+colSums(is.na(dat_na_clean))
+```
+
+# Remove brewery_id and beer_beerid. 
+```{r}
+dat_remove_ids <- dat_na_clean %>% 
+  select(-beer_beerid, -brewery_id)
+```
+
+# Perform factoring, arrange columns and add ID column
+```{r}
+dat_selected <- dat_remove_ids %>% 
+  mutate(id = row_number(),
+         review_overall = as.factor(review_overall),
+         review_aroma = as.factor(review_aroma),
+         review_appearance = as.factor(review_appearance),
+         review_palate = as.factor(review_palate),
+         review_taste = as.factor(review_taste)) %>% 
+  select(id, brewery_name, beer_name, beer_style, beer_abv, review_profilename, review_overall, review_aroma,
+         review_appearance, review_palate, review_taste, review_time)
+```
+
+
+# Compare distribution of ratings
+```{r}
+dat_remove_ids %>%
+  ggplot() +
+  geom_density(aes(x = review_overall, y = count(n)), fill = 'red', alpha = 0.5) +
+  geom_density(aes(x = review_aroma, y = n), fill = 'blue', alpha = 0.5)
+```
+
+# PreProcessing using "preProcess" on both train and test. 
+```{r}
+dat_to_pre_process = dat_train %>% select(-ticket, -name, -embarked)
+mod_pre_process = preProcess(dat_to_pre_process,
+                             method = 'bagImpute')
+dat_train_ages = predict(mod_pre_process, dat_to_pre_process) %>%
+  select(age)
+
+dat_train_clean = dat_train %>%
+  mutate(age = dat_train_ages$age)
+
+
+# Impute model was built, apply to test data to keep up to date
+dat_to_pre_process = dat_test %>% select(-ticket, -name, -embarked)
+dat_test_ages = predict(mod_pre_process, dat_to_pre_process) %>%
+  select(age)
+dat_test_clean = dat_test %>%
+  mutate(age = dat_test_ages$age)
+
+```
+
+# Impute the NAs in beer_abv to the mode of all beer_abv. 
+```{r}
+
+```
+
+
+```{r}
+dat_na_clean %>%
+#  sample_n(1000) %>% 
+  ggplot(aes(x = beer_abv)) +
+  geom_density()
+```
+
+```{r}
+
+```
+
+```{r}
+
+
+```
+
+
+
+
