@@ -1,236 +1,198 @@
 ---
-title: "Beers_Tom_Jankowski_Capstone.Rmd"
+title: "Canned Craft Beer Recommender.Rmd"
 author: "Tom_Jankowski"
 date: "10/14/2019"
-output: html_document
+output: pdf_document
+toc: true
+toc_depth: 3
+number_sections: true
+theme: united
+highlight: tango
 ---
 
+# Canned Craft Beer Recommender Application  
+## Analysis in R  image: ![](path/to/smallorb.png)  
+### by Tom Jankowski  
+
+# Package and Library installation and loading.  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-# Load required packages / Libraries
-#install.packages("ranger")
-#install.packages("rpart")
 library("tidyverse")
 library("rattle")
 library("rpart")
 library("caret")
 library("ranger")
 library("lubridate")
-#library(anytime)
+
 # Set Seed
 set.seed(123)
 ```
 
-# Dataset obtained from data.world. Beer Advocate beer ratings.
-```{r cars}
-beer_ratings <- readr::read_csv("https://foco-ds-portal-files.s3.amazonaws.com/beer_reviews_beer_advocate.csv")
-```
+# Canned beer dataset obtained from kaggle.com:  
+## [link] (https://www.kaggle.com/nickhould/craft-cans). 
+
+The dataset consists of two files:  
+  - beers.csv (2410 obs. of 8 variables).  
+  - breweries.csv (558 obs of 4 variables).  
+More detailed analysis of each dataset is provided in Exploratory Data Analysis (EDA) section.
 
 ```{r}
-dat <- beer_ratings
-head(dat, 10)
+beers <- read_csv('beers.csv')
+breweries <- read_csv('breweries.csv')
 ```
 
-# Glimpse 
+# Initial EDA on the **beers** dataset.  
+
+## Descriptive statistics provides a quick summary of the features in the beers dataset.  
 ```{r}
-glimpse(dat)
+summary(beers)
 ```
 
-# Exploration  
+## Glimpse provides a quick look at the actual data values.  
 ```{r}
-dat %>% 
-  sample_n(1000) %>% 
-  group_by(beer_style) %>% 
-  count() %>% 
-  ggplot(aes(x = beer_style, y = n)) +
-  geom_col() + 
-  geom_label(aes(label = scales::percent(n / sum(n)))) +
-  coord_flip()
+glimpse(beers)
 ```
 
-# Top 10 reviewed breweries 
+## I need to determine the sum and proportion of missing values.  
 ```{r}
-top_ten_breweries <- dat %>% 
-  count(beer_beerid, brewery_name, sort = TRUE)
-
-head(top_ten_breweries, 10)
+colSums(is.na(beers))
 ```
-# Top 10 beers 
+
+# NAs 
 ```{r}
-top_ten_beers <- dat %>% 
-  count(beer_beerid, beer_name, sort = TRUE)
+round(colSums(is.na(beers)) / nrow(beers), 4)
+```
+It appears that there are .21% (5 obs.) missing in the **style** column. These are of no concern since there is a brewery_id for each missing style, and I can obtain the missing values from the brewery websites. The larger concern in the 41.7% (1005 obs.) missing values in the **ibu** column. These missing values, along with the 2.57% (62 obs.) in the **abv** column will be imputed using PreProcessing, which is part of the 'caret package'.
 
-head(top_ten_beers, 10)
+# Initial EDA on the **breweries** dataset.  
+
+## Descriptive statistics provides a quick summary of the features in the beers dataset.  
+```{r}
+summary(breweries)
 ```
 
+## Glimpse provides a quick look at the actual data values.  
+```{r}
+glimpse(breweries)
+```
+## I need to determine the sum and proportion of missing values.  
+```{r}
+colSums(is.na(breweries))
+```
+The **breweries** dataset contains no missing values. 
+
+## Left Join  
+To work with both datasets, I will need to perform a left join (beers to breweries). Here I am creating a new data frame named **dat**.
+```{r}
+dat <- beers %>% 
+left_join(breweries, by = c('brewery_id' = 'X1'))
+```
+
+The column names need cleaning. Here I will rename some of the columns so they are more readable, and not duplicative. This will require removing the **X1** id, **id**, and **brewery_id** columns as they will not be useful in the analysis. Also, for readability, I will change the beer name column **name.x** to beer_name and the **name.y** column to brewery_name. Here I am creating a new data frame named **dat_selected**.
 
 ```{r}
-dat %>%
-  ggplot(aes(x=review_overall)) +
-  geom_density(fill = 'red', alpha = 0.5)
+dat_selected <- dat %>%
+  rename(beer_name = name.x) %>% 
+  rename(brewery_name = name.y) %>% 
+  select(-id, -brewery_id, -X1)
 ```
 
+The new **dat_selected** dataframe contains 2410 observations and 8 columns.
 
-# EDA Actions TO DO:
-
- - Rearrange the columns for easier viewing
- - impute the missing abv rows
- - Explore the ratings columns
- 
- 
- 
-# Descriptive Statistics (Summary) 
+# Handling NAs  
+Now, I must deal with the missing values in the data frame. First, since there are only 5 NA observations in the **style** column, I will replace the missing values with the actual values as obtained from the breweries respective websites.
 ```{r}
-summary(dat)
+# Replacing the 3 NAs in the style column with actual values 
+dat_selected[854, 4] <- "Scottish Ale"
+dat_selected[567, 4] <- "Abbey Single Ale"
+dat_selected[867, 4] <- "Märzen / Oktoberfest"
+
+# Adding beer name to a missing value
+dat_selected[567, 3] <- "Belgian Dubbel"
+
+# Replacing NAs in the abv column with known values 
+dat_selected[567, 1] <- "0.076"
+dat_selected[316, 1] <- "0.062"
+dat_selected[317, 1] <- "0.034"
+dat_selected[318, 1] <- "0.054"
+dat_selected[319, 1] <- "0.055"
+dat_selected[465, 1] <- "0.072"
+dat_selected[542, 1] <- "0.050"
+dat_selected[656, 1] <- "0.060"
+dat_selected[657, 1] <- "0.060"
+dat_selected[724, 1] <- "0.055"
+dat_selected[731, 1] <- "0.061"
+dat_selected[733, 1] <- "0.058"
+dat_selected[925, 1] <- "0.065"
+dat_selected[1031, 1] <- "0.050"
+dat_selected[1118, 1] <- "0.070"
+dat_selected[1169, 1] <- "0.051"
+dat_selected[1170, 1] <- "0.050"
+dat_selected[1171, 1] <- "0.052"
+dat_selected[1172, 1] <- "0.050"
+dat_selected[1173, 1] <- "0.047"
+dat_selected[1174, 1] <- "0.051"
+dat_selected[1354, 1] <- "0.058"
+dat_selected[1557, 1] <- "0.070"
+dat_selected[1637, 1] <- "0.055"
+dat_selected[1668, 1] <- "0.065"
+dat_selected[1814, 1] <- "0.060"
+dat_selected[1888, 1] <- "0.058"
+dat_selected[1970, 1] <- "0.056"
+dat_selected[2045, 1] <- "0.045"
+dat_selected[2187, 1] <- "0.052"
+dat_selected[2338, 1] <- "0.070"
+dat_selected[2348, 1] <- "0.055"
+
+# Replacing NAs in ibu column with known values
+dat_selected[567, 2] <- "25"
+dat_selected[1, 2] <- "18"
+
+# Delete 2 rows that are not actually beers
+dat_selected <- dat_selected[-c(1555, 1556), ]
+
+# Reassign to a new df 
+dat_na_clean <- dat_selected
 ```
 
-# Total Rows
-```{r}
-dat %>%
-  group_by(review_profilename) %>% 
-  summarise(n=n())
-```
-
-# Look at NAs
-```{r}
-colSums(is.na(dat))
-```
-
-# NAs by proportion
-```{r}
-round(colSums(is.na(dat)) / nrow(dat), 4)
-```
-
-# EDA - Clean-up NAs
-```{r}
-dat_na_clean <- dat %>% 
-  filter(!is.na(brewery_name)) %>% 
-  filter(!is.na(review_profilename))
-```
-
-# Mean of beer_abv 
-```{r}
-mean(dat_na_clean$beer_abv, na.rm = T)
-```
-
-# Count beer_abv
-```{r}
-dat_na_clean %>% 
-  group_by(beer_abv) %>% 
-  count()
-```
-
-# Convert Epoch date to Date/Time using lubridate
-```{r}
-dat_date_time <- dat_na_clean %>% 
-  mutate(date_time = lubridate::as_datetime(dat_na_clean$review_time))
-head(dat_date_time)
-```
-
-
-# review distributions - values 
-```{r}
-ratings_range <- c(1.0,1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0)
-dat_na_clean %>% 
-  select(review_aroma)
-```
-
-
-
-# beer_abv distribution 
-```{r}
-dat_na_clean %>% 
-  ggplot() +
-  geom_histogram(mapping = aes(x=beer_abv), binwidth = .05)
-```
-
-
-# Count categorical variable levels
-```{r}
-dat_na_clean %>% 
-  ggplot() +
-  geom_density(aes(x = review_overall), fill = 'red', alpha = 0.4) +
-  geom_density(aes(x = review_aroma), fill = 'blue', alpha = 0.4) +
-  geom_density(aes(x = review_appearance), fill = 'grey', alpha = 0.4) +
-  geom_density(aes(x = review_taste), fill = 'green', alpha = 0.4) +
-  geom_density(aes(x = review_palate), fill = 'yellow', alpha = 0.4)
-```
+After cleaning the NAs, the data now contains 1001 NAs in the **ibu** column and 28 NAs in the **abv** column. These will be addressed later by imputed using PreProcessing.
 
 ```{r}
 colSums(is.na(dat_na_clean))
 ```
 
-# Remove brewery_id and beer_beerid. 
+One last clean-up activity includes setting the **abv** data to 4 decimal places to ensure consistency.  
+
 ```{r}
-dat_remove_ids <- dat_na_clean %>% 
-  select(-beer_beerid, -brewery_id)
+dat_abv_round <- dat_na_clean %>% 
+  mutate(abv = round(abv, 4))
 ```
 
-# Perform factoring, arrange columns and add ID column
+# Exploratory Data Analysis (EDA)  
+
+With a joined and clean dataset, I will analyze the data to identify distributions and any variable relationships. The first analysis that interests me is the beer styles that are most common. I will use a bar chart to show this distribution. We can see that IPAs, Pale ales and other ales dominate the most common styles.
+
 ```{r}
-dat_selected <- dat_remove_ids %>% 
-  mutate(id = row_number(),
-         review_overall = as.factor(review_overall),
-         review_aroma = as.factor(review_aroma),
-         review_appearance = as.factor(review_appearance),
-         review_palate = as.factor(review_palate),
-         review_taste = as.factor(review_taste)) %>% 
-  select(id, brewery_name, beer_name, beer_style, beer_abv, review_profilename, review_overall, review_aroma,
-         review_appearance, review_palate, review_taste, review_time)
-```
-
-
-# Compare distribution of ratings
-```{r}
-dat_remove_ids %>%
-  ggplot() +
-  geom_density(aes(x = review_overall, y = count(n)), fill = 'red', alpha = 0.5) +
-  geom_density(aes(x = review_aroma, y = n), fill = 'blue', alpha = 0.5)
-```
-
-# PreProcessing using "preProcess" on both train and test. 
-```{r}
-dat_to_pre_process = dat_train %>% select(-ticket, -name, -embarked)
-mod_pre_process = preProcess(dat_to_pre_process,
-                             method = 'bagImpute')
-dat_train_ages = predict(mod_pre_process, dat_to_pre_process) %>%
-  select(age)
-
-dat_train_clean = dat_train %>%
-  mutate(age = dat_train_ages$age)
-
-
-# Impute model was built, apply to test data to keep up to date
-dat_to_pre_process = dat_test %>% select(-ticket, -name, -embarked)
-dat_test_ages = predict(mod_pre_process, dat_to_pre_process) %>%
-  select(age)
-dat_test_clean = dat_test %>%
-  mutate(age = dat_test_ages$age)
-
-```
-
-# Impute the NAs in beer_abv to the mode of all beer_abv. 
-```{r}
-
+dat_na_clean %>% 
+  group_by(style) %>%
+  summarise(count = n()) %>%
+  filter(count > 50) %>%
+  ggplot(aes(reorder(style, count), count)) +
+  geom_col(fill = "tan") +
+  coord_flip() +
+  labs(title = "Top Beer Styles", subtitle = "Greater than 50 beers", x = "Sum of Beer Styles > 50", y = "Beer Styles")
 ```
 
 
-```{r}
-dat_na_clean %>%
-#  sample_n(1000) %>% 
-  ggplot(aes(x = beer_abv)) +
-  geom_density()
-```
 
 ```{r}
+top_10_states <- dat_na_clean %>% 
+  group_by(state) %>% 
+  summarise(top_10 = n()) %>% 
+  arrange(desc(top_10)) %>% 
+  top_n(10)
 
+top_10_states
 ```
-
-```{r}
-
-
-```
-
-
 
 
