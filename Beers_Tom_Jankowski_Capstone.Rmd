@@ -11,84 +11,89 @@ highlight: tango
 ---
 
 # Canned Craft Beer Recommender Application  
-## Analysis in R  image: ![](path/to/smallorb.png)  
-### by Tom Jankowski  
+## A Beerage of Choices!
+### Analysis in R -- by Tom Jankowski  
 
 # Package and Library installation and loading.  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+#install.packages("rstan")
+#install.packages('dendextend')
 library("tidyverse")
 library("rattle")
 library("rpart")
 library("caret")
 library("ranger")
 library("lubridate")
+library('dendextend')
+library('gridExtra')
 
 # Set Seed
 set.seed(123)
 ```
 
-# Canned beer dataset obtained from kaggle.com:  
-## [link] (https://www.kaggle.com/nickhould/craft-cans). 
+# Dataset
+## Canned beer dataset obtained from kaggle.com: [link] (https://www.kaggle.com/nickhould/craft-cans). 
 
 The dataset consists of two files:  
   - beers.csv (2410 obs. of 8 variables).  
   - breweries.csv (558 obs of 4 variables).  
-More detailed analysis of each dataset is provided in Exploratory Data Analysis (EDA) section.
+More detailed analysis of each dataset is provided in Exploratory Data Analysis (EDA) section below.
 
 ```{r}
-beers <- read_csv('beers.csv')
+beers <- read_csv('beers_updated.csv')
 breweries <- read_csv('breweries.csv')
 ```
+
+# Craft Canned Beer Recommender Application -- Business Case  
+
+Craft beer drinkers use different forms of information to select a beer. These include beer price, style, beer name, labeling, alcohol by volume (abv), international bitterness units (ibu), flavor profile, brewery, and the access they have to beers in thier local city, state, and brewery taphouses. Unless you live under a rock, you've no doubt noticed the booming craft beer market. According to the Brewers Association - an American trade group representing craft brewers, suppliers, and distributors, sales account for 24% of the U.S. beer market worth over $114 billion. Beer in the U.S. is manufactured by more than 7,000 breweries, which range in size from industry giants to brew pubs and microbreweries. With thousnds of brews to choose from, how do beer lovers choose a beer among a dizzying array of beer options. This is where the **Craft Canned Beer Rcommender App** helps make these choices a bit easier. The **Craft Canned Beer Rcommender App** is designed to help customers of beer retailers (such as liqour stores, grocery stores, and convenient stores) choose a beer based on a set of criteria including: beer abv, beer ibu, beer name, beer style, brewery name, city and state. Reatilers who offer its customers with the option to use the Craft Canned Beer Rcommender App will provide a better service to its customers increasing customer satisfation and loyalty, which increase sales and profit.
+
 
 # Initial EDA on the **beers** dataset.  
 
 ## Descriptive statistics provides a quick summary of the features in the beers dataset.  
+
 ```{r}
 summary(beers)
 ```
 
-## Glimpse provides a quick look at the actual data values.  
+## Glimpse provides a quick look at the actual data values in the beers dataset.  
+
 ```{r}
 glimpse(beers)
 ```
 
-## I need to determine the sum and proportion of missing values.  
-```{r}
-colSums(is.na(beers))
-```
-
-# NAs 
-```{r}
-round(colSums(is.na(beers)) / nrow(beers), 4)
-```
-It appears that there are .21% (5 obs.) missing in the **style** column. These are of no concern since there is a brewery_id for each missing style, and I can obtain the missing values from the brewery websites. The larger concern in the 41.7% (1005 obs.) missing values in the **ibu** column. These missing values, along with the 2.57% (62 obs.) in the **abv** column will be imputed using PreProcessing, which is part of the 'caret package'.
-
 # Initial EDA on the **breweries** dataset.  
 
-## Descriptive statistics provides a quick summary of the features in the beers dataset.  
+## Descriptive statistics provides a quick summary of the features in the breweries dataset.  
+
 ```{r}
 summary(breweries)
 ```
 
-## Glimpse provides a quick look at the actual data values.  
+## Glimpse provides a quick look at the actual data values in the breweries dataset.  
+
 ```{r}
 glimpse(breweries)
 ```
-## I need to determine the sum and proportion of missing values.  
-```{r}
-colSums(is.na(breweries))
-```
-The **breweries** dataset contains no missing values. 
 
+# Join the 2 datasets  
 ## Left Join  
+
 To work with both datasets, I will need to perform a left join (beers to breweries). Here I am creating a new data frame named **dat**.
 ```{r}
 dat <- beers %>% 
 left_join(breweries, by = c('brewery_id' = 'X1'))
 ```
 
-The column names need cleaning. Here I will rename some of the columns so they are more readable, and not duplicative. This will require removing the **X1** id, **id**, and **brewery_id** columns as they will not be useful in the analysis. Also, for readability, I will change the beer name column **name.x** to beer_name and the **name.y** column to brewery_name. Here I am creating a new data frame named **dat_selected**.
+## A glimpse at the joined dataset shows my columns, datatypes, and sample values.  
+
+```{r}
+glimpse(dat)
+```
+
+As seen above, the column names need cleaning. Here I will rename some of the columns so they are more readable, and not duplicative. This will require removing the **X1** id, **id**, and **brewery_id** columns as they will not be useful in the analysis and modeling. Also, for readability, I will change the beer name column **name.x** to beer_name and the **name.y** column to brewery_name. Here I am creating a new data frame named **dat_selected**.
 
 ```{r}
 dat_selected <- dat %>%
@@ -99,73 +104,106 @@ dat_selected <- dat %>%
 
 The new **dat_selected** dataframe contains 2410 observations and 8 columns.
 
+# Handling Missing Values  
 # Handling NAs  
-Now, I must deal with the missing values in the data frame. First, since there are only 5 NA observations in the **style** column, I will replace the missing values with the actual values as obtained from the breweries respective websites.
+
+I need to determine the sum and proportion of missing values in my joined dataset. As seen below, It appears that I have a number of missing values across the columns that must be addressed.
+
 ```{r}
-# Replacing the 3 NAs in the style column with actual values 
-dat_selected[854, 4] <- "Scottish Ale"
-dat_selected[567, 4] <- "Abbey Single Ale"
-dat_selected[867, 4] <- "Märzen / Oktoberfest"
+colSums(is.na(dat_selected))
+round(colSums(is.na(dat_selected)) / nrow(dat_selected), 4)
+```
 
-# Adding beer name to a missing value
-dat_selected[567, 3] <- "Belgian Dubbel"
+The .08% (2 obs.) missing values in the **style** column are not of concern since after examining these rows, I have determined that they are inaccurate and do not actually contain beer data. They will be deleted.
 
-# Replacing NAs in the abv column with known values 
-dat_selected[567, 1] <- "0.076"
-dat_selected[316, 1] <- "0.062"
-dat_selected[317, 1] <- "0.034"
-dat_selected[318, 1] <- "0.054"
-dat_selected[319, 1] <- "0.055"
-dat_selected[465, 1] <- "0.072"
-dat_selected[542, 1] <- "0.050"
-dat_selected[656, 1] <- "0.060"
-dat_selected[657, 1] <- "0.060"
-dat_selected[724, 1] <- "0.055"
-dat_selected[731, 1] <- "0.061"
-dat_selected[733, 1] <- "0.058"
-dat_selected[925, 1] <- "0.065"
-dat_selected[1031, 1] <- "0.050"
-dat_selected[1118, 1] <- "0.070"
-dat_selected[1169, 1] <- "0.051"
-dat_selected[1170, 1] <- "0.050"
-dat_selected[1171, 1] <- "0.052"
-dat_selected[1172, 1] <- "0.050"
-dat_selected[1173, 1] <- "0.047"
-dat_selected[1174, 1] <- "0.051"
-dat_selected[1354, 1] <- "0.058"
-dat_selected[1557, 1] <- "0.070"
-dat_selected[1637, 1] <- "0.055"
-dat_selected[1668, 1] <- "0.065"
-dat_selected[1814, 1] <- "0.060"
-dat_selected[1888, 1] <- "0.058"
-dat_selected[1970, 1] <- "0.056"
-dat_selected[2045, 1] <- "0.045"
-dat_selected[2187, 1] <- "0.052"
-dat_selected[2338, 1] <- "0.070"
-dat_selected[2348, 1] <- "0.055"
-
-# Replacing NAs in ibu column with known values
-dat_selected[567, 2] <- "25"
-dat_selected[1, 2] <- "18"
-
-# Delete 2 rows that are not actually beers
+```{r}
 dat_selected <- dat_selected[-c(1555, 1556), ]
-
-# Reassign to a new df 
-dat_na_clean <- dat_selected
 ```
 
-After cleaning the NAs, the data now contains 1001 NAs in the **ibu** column and 28 NAs in the **abv** column. These will be addressed later by imputed using PreProcessing.
-
 ```{r}
-colSums(is.na(dat_na_clean))
+dat_selected %>% 
+  group_by(brewery_name) %>% 
+  summarise(n=n())
 ```
 
-One last clean-up activity includes setting the **abv** data to 4 decimal places to ensure consistency.  
+
+The larger concern is the 41.62% (1003 obs.) missing values in the **ibu** column. These missing values, along with the 1.16% (28 obs.) in the **abv** column could be handled in a number of ways. To determine a course of action, I will examine any potential associations between **ibu** and other variables.   
+
+First I will examine the distribution of ibu NAs in the style column. 
 
 ```{r}
-dat_abv_round <- dat_na_clean %>% 
-  mutate(abv = round(abv, 4))
+dat_selected %>% 
+  group_by(style) %>% 
+  filter(is.na(ibu)) %>% 
+  count() %>% 
+  ggplot(aes(x=style, y = n)) +
+  geom_point()
+```
+The proportion of ibu NAs related to syle don't appear to have a relationship.
+
+```{r}
+ibu_na <- dat_selected %>% 
+  group_by(style) %>% 
+  filter(is.na(ibu)) %>% 
+  summarise(ibu_na = n()) %>%
+  arrange(desc(ibu_na)) %>% 
+  ungroup() %>% 
+  select(ibu_na)
+ibu_na
+```
+
+```{r}
+ibu_non_na <- dat_selected %>% 
+  group_by(style) %>% 
+  filter(!is.na(ibu)) %>% 
+  summarise(ibu_value = n()) %>%
+  arrange(desc(ibu_value)) %>% 
+  ungroup() %>% 
+  select(ibu_value)
+ibu_non_na
+```
+
+## ABV NAs -- Analysis of missing values  
+
+A look at the missing abv values.
+
+```{r}
+dat_selected %>% 
+  group_by(style) %>% 
+  filter(is.na(abv)) %>% 
+  count() %>% 
+  ggplot(aes(x=style, y = n)) +
+  geom_point()
+```
+
+Missing abv values.
+
+```{r}
+abv_na <- dat_selected %>% 
+  group_by(style) %>% 
+  filter(is.na(abv)) %>% 
+  summarise(abv_na = n()) %>%
+  arrange(desc(abv_na))
+#  ungroup()
+#  select(abv_na)
+abv_na
+```
+
+ABV values not missing.
+
+```{r}
+abv_non_na <- dat_selected %>% 
+  group_by(style) %>% 
+  filter(!is.na(abv)) %>% 
+  summarise(abv_value = n()) %>%
+  arrange(desc(abv_value))
+#  ungroup()
+#  select(abv_value)
+abv_non_na
+```
+
+```{r}
+
 ```
 
 # Exploratory Data Analysis (EDA)  
@@ -173,7 +211,7 @@ dat_abv_round <- dat_na_clean %>%
 With a joined and clean dataset, I will analyze the data to identify distributions and any variable relationships. The first analysis that interests me is the beer styles that are most common. I will use a bar chart to show this distribution. We can see that IPAs, Pale ales and other ales dominate the most common styles.
 
 ```{r}
-dat_na_clean %>% 
+dat_selected %>% 
   group_by(style) %>%
   summarise(count = n()) %>%
   filter(count > 50) %>%
@@ -183,10 +221,10 @@ dat_na_clean %>%
   labs(title = "Top Beer Styles", subtitle = "Greater than 50 beers", x = "Sum of Beer Styles > 50", y = "Beer Styles")
 ```
 
-
+## Top 10 States for craft beer in the dataset.  
 
 ```{r}
-top_10_states <- dat_na_clean %>% 
+top_10_states <- dat_selected %>% 
   group_by(state) %>% 
   summarise(top_10 = n()) %>% 
   arrange(desc(top_10)) %>% 
@@ -194,5 +232,143 @@ top_10_states <- dat_na_clean %>%
 
 top_10_states
 ```
+## ABV / IBU Relationship  
 
+```{r}
+dat_selected %>%
+  select(ibu, abv) %>%
+  ggplot(aes(abv, ibu)) + 
+  geom_point(alpha = .4) +
+  geom_smooth(method = lm, color = 'blue')
+```
+
+```{r}
+dat_selected %>%
+  group_by(state) %>%
+  mutate(mean_ibu = mean(ibu, na.rm = TRUE)) %>%
+  ggplot(aes(x = reorder(state, -mean_ibu), y = ibu, fill = mean_ibu)) + 
+  geom_boxplot() + 
+  labs(x = "state", y = "Beer IBU", title = "Who Likes Bitter Beer?")
+```
+
+```{r}
+dat_abv_clean <- dat_selected %>% 
+  group_by(style) %>% 
+  mutate(abv = if_else(is.na(abv), mean(abv, na.rm = TRUE), abv),
+         ibu = if_else(is.na(ibu), mean(ibu, na.rm = TRUE), ibu)) %>% 
+  ungroup()
+```
+
+```{r}
+dat_ibu_clean <- dat_abv_clean %>%
+  group_by(style) %>% 
+  mutate(ibu = if_else(is.na(ibu), mean(ibu), ibu)) %>% 
+  ungroup()
+```
+
+```{r}
+dat_clean_cases <- dat_ibu_clean %>% 
+  filter(complete.cases(dat_ibu_clean))
+```
+
+```{r}
+dat_clean <- dat_clean_cases %>%
+  mutate(ibu = round(ibu, 0),
+         abv = round(abv, 3),
+         ounces = round(ounces, 0))
+dat_clean
+```
+
+
+```{r}
+colSums(is.na(dat_clean))
+round(colSums(is.na(dat_clean)) / nrow(dat_clean), 4)
+```
+
+## Looking at duplicates in the beer_name column  
+```{r}
+dat_clean %>% 
+  group_by(beer_name, ounces) %>% 
+  count() %>% 
+  arrange(beer_name) %>% 
+  arrange(desc(n))
+```
+
+```{r}
+dat_selected$beer_name[duplicated(dat_selected$beer_name)]
+```
+
+## Removing columns with duplicate beer names.  
+```{r}
+dat_no_dups <- dat_clean %>%
+  distinct(beer_name, .keep_all = TRUE)
+```
+
+## Rownames conversion for Hierachical Clustering  
+```{r}
+dat_model <- dat_no_dups %>%
+  column_to_rownames("beer_name") %>%
+  as_tibble()
+```
+
+## Data Split 75% Train / 25% Test  
+```{r}
+dat_model <- dat_model %>% 
+  mutate(id = row_number())
+
+dat_train <- dat_model %>%
+  sample_frac(0.75)
+
+dat_test <- dat_model %>%
+ anti_join(dat_train, by = 'id') %>%
+ select(-id)
+
+dat_train <- dat_train %>%
+ select(-id)
+```
+
+# ----- MODELING STARTS HERE ----- ###
+
+```{r}
+dat_df <- as.data.frame(dat_train)
+rownames(dat_df) <- dat_train$beer_name
+
+dat_df_sampled <- dat_df %>% 
+  sample_n(50)
+  
+
+distance_data <- dist(dat_df_sampled, method = 'euclidean')
+hc_complete <- hclust(distance_data, method = 'complete')
+plot(hc_complete, hang = -1, cex = 0.6)
+```
+
+```{r}
+hc_cut <- cutree(hc_complete, 3)
+table(hc_cut)
+```
+
+
+```{r}
+k_val = 5
+
+hc_complete_dendro <- as.dendrogram(hc_complete)
+
+dend_colored <- hc_complete_dendro %>%
+  color_branches(k = k_val) %>%
+  color_labels(k = k_val)
+
+plot(dend_colored)
+```
+
+```{r}
+k_val = 5
+
+hc_complete_dendro = as.dendrogram(hc_complete)
+
+dend_colored = hc_complete_dendro %>%
+  color_branches(k = k_val) %>%
+  color_labels(k = k_val)
+
+plot(dend_colored)
+```
 
