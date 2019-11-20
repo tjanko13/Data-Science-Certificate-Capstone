@@ -17,10 +17,12 @@ highlight: tango
 # Package and Library installation and loading.  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+#update.packages(ask = FALSE)
 #install.packages("rstan")
 #install.packages('dendextend')
 #install.packages("ggdendro")
-install.packages('ape')
+#install.packages('ape')
+#install.packages("caret")
 library("ape")
 library("tidyverse")
 library("rattle")
@@ -103,7 +105,8 @@ As seen above, the column names need cleaning. Here I will rename some of the co
 ```{r}
 dat_selected <- dat %>%
   rename(beer_name = name.x) %>% 
-  rename(brewery_name = name.y) %>% 
+  rename(brewery_name = name.y) %>%
+  mutate(ounces = round(ounces, 0)) %>% 
   mutate(ounces = as.factor(ounces)) %>% 
   select(-id, -brewery_id, -X1)
 ```
@@ -281,8 +284,7 @@ dat_clean_cases <- dat_ibu_clean %>%
 ```{r}
 dat_clean <- dat_clean_cases %>%
   mutate(ibu = round(ibu, 0),
-         abv = round(abv, 3),
-         ounces = round(ounces, 0))
+         abv = round(abv, 3))
 dat_clean
 ```
 
@@ -302,7 +304,7 @@ dat_clean %>%
 ```
 
 ```{r}
-dat_selected$beer_name[duplicated(dat_selected$beer_name)]
+#dat_selected$beer_name[duplicated(dat_selected$beer_name)]
 ```
 
 ## Removing columns with duplicate beer names.  
@@ -315,60 +317,108 @@ dat_selected$beer_name[duplicated(dat_selected$beer_name)]
 ```{r}
 dat_model <- dat_clean %>% 
   mutate(beer_name = paste0(beer_name, "-", ounces)) %>% 
-  distinct(beer_name, .keep_all = TRUE)
+  distinct(beer_name, .keep_all = TRUE) %>% 
+  mutate(id = row_number())
 ```
 
-## Data Split 75% Train / 25% Test  
+## Data Split Train / Test  based on a predefined set of known and recognizable beer names  
 ```{r}
-dat_model <- dat_model %>% 
-  mutate(id = row_number())
-
-dat_train <- dat_model %>%
-  sample_frac(0.75)
+test_beer_names <- c("Fat Tire Amber Ale-12", "Fat Tire Amber Ale-16", "White Rascal-12", "Boston Lager-12",
+                     "Boston Lager-16", "Mirror Pond Pale Ale-12", "1554 Black Lager-12", "Dale's Pale Ale (2012)-12",
+                     "Mama's Little Yella Pils-12", "Mama's Little Yella Pils-19", "Monarch Pilsner-12",
+                     "Upslope Brown Ale-12", "G'KNIGHT (12 oz.)-12", "G'KNIGHT (16 oz.)-16", "Hop Crisis-12",
+                     "Sculpin IPA-12", "Todd the Axe Man-16", "Wyoming Pale Ale-16", "Samuel Adams Winter Lager-12",
+                     "Laughing Dog Cream Ale-12", "Apricot Blonde-12", "TailGate Hefeweizen-12",
+                     "TailGate Hefeweizen-24", "Easy Day Kolsch-12", "Kilt Lifter Scottish-Style Ale-12",
+                     "Grateful White-12", "Hazy Day Belgian-Style Wit-16", "Vivant Tripel (2012)-16", "Righteous Ale-16",
+                     "Crabtree Oatmeal Stout-16")
 
 dat_test <- dat_model %>%
- anti_join(dat_train, by = 'id') %>%
- select(-id) %>%
+  filter(beer_name %in% test_beer_names)
+
+dat_train <- dat_model %>% 
+ anti_join(dat_test, by = 'id') %>%
+ select(-id)
+
+dat_test <- dat_test %>% 
+  select(-id)
+```
+
+### Original train / test split code  
+```{r}
+#dat_model <- dat_model %>% 
+#  mutate(id = row_number())
+
+#dat_train <- dat_model %>%
+#  sample_frac(0.75)
+
+#dat_test <- dat_model %>%
+# anti_join(dat_train, by = 'id') %>%
+# select(-id) %>%
+#  column_to_rownames("beer_name")
+
+#dat_train <- dat_train %>%
+# select(-id) %>%
+# sample_n(50) %>% 
+# column_to_rownames("beer_name")
+```
+
+```{r}
+dat_train_rownames <- dat_train %>%
   column_to_rownames("beer_name")
 
-dat_train <- dat_train %>%
- select(-id) %>%
- sample_n(50) %>% 
- column_to_rownames("beer_name")
+dat_test_rownames <- dat_test %>%
+  column_to_rownames("beer_name")
 ```
+
+## Sampling the train set for easy viewing   
+```{r}
+#dat_train_rownames <- dat_train_rownames %>% 
+#  sample_n(50)
+```
+
 
 # ----- MODELING STARTS HERE ----- ###
 
 ## Preprocessing  
 Pre-processing using **Standardization**, which combines both scaling and centering transformations.   
 ```{r}
-pp_model <- preProcess(dat_train, method = c('center', 'scale'))
-dat_train_pp <- predict(pp_model, dat_train)
+pp_model <- preProcess(dat_train_rownames, method = c('center', 'scale'))
+dat_train_pp <- predict(pp_model, dat_train_rownames)
 dat_train_pp
 ```
 
+```{r}
+#dat_train_pp <- dat_train_pp %>% 
+#  sample_n(50)
+```
+
+
 ## Hieracrhical Clustering Model   
 ```{r}
-distance_data <- dist(dat_train, method = 'euclidean')
+distance_data <- dist(dat_train_pp, method = 'euclidean')
 hc_complete <- hclust(distance_data, method = 'complete')
 plot(hc_complete, hang = -1, cex = 0.6)
 ```
 
 ```{r}
-hc_cut <- cutree(hc_complete, 3)
-table(hc_cut)
+hc_cut <- cutree(hc_complete, 4)
+dat_train_pp <- dat_train_pp %>%
+  mutate(Class = as.factor(hc_cut))
+
+#hc_cut
 ```
 
 
 ```{r}
-a = cutree(hc_complete, 4)
-dat_train$cluster = a
-dat_train %>%
+a <- cutree(hc_complete, 4)
+dat_train_rownames$cluster <- a
+dat_train_rownames %>%
   group_by(cluster) %>%
   count() %>%
   arrange(n)
 
-dat_train %>%
+dat_train_rownames %>%
   ggplot(aes(x = abv, y = ibu)) +
   geom_point()
 ```
@@ -416,6 +466,37 @@ dist_data
 
 ```{r}
 dist_data[1]
+```
+
+```{r}
+pred_test <- predict(pp_model, dat_test_rownames)
+pred_ibu <- pred_test$ibu
+pred_abv <- pred_test$abv
+dat_test_standardized <- pred_test %>%
+  mutate(abv = pred_abv, ibu = pred_ibu)
+
+dat_test_standardized
+```
+
+```{r}
+predictions <- predict(pp_model, dat_test_standardized)
+predictions
+```
+
+
+```{r}
+confusionMatrix(predictions, dat_test_standardized$Class)
+```
+
+# ---- Classification Model ----
+## Predicting cluster  
+
+```{r}
+train_control <- trainControl(method = 'cv', number = 5, allowParallel = TRUE)
+
+model_rf <- train(dat_train_pp %>% select(-Class), dat_train_pp$Class, method = 'ranger', trControl = train_control)
+
+model_rf
 ```
 
 
