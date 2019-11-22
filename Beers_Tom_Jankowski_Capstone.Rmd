@@ -363,40 +363,29 @@ dat_test <- dat_test %>%
 # column_to_rownames("beer_name")
 ```
 
+# ----- MODELING STARTS HERE ----- ###
+
+## Preprocessing  
+Pre-processing using **Standardization**, which combines both scaling and centering transformations.   
 ```{r}
-dat_train_rownames <- dat_train %>%
+model_pp <- preProcess(dat_train, method = c('center', 'scale'))
+dat_train_pp <- predict(model_pp, dat_train) %>% 
+  sample_n(30)
+dat_train_pp
+```
+
+
+```{r}
+dat_train_rownames <- dat_train_pp %>%
   column_to_rownames("beer_name")
 
 dat_test_rownames <- dat_test %>%
   column_to_rownames("beer_name")
 ```
 
-## Sampling the train set for easy viewing   
-```{r}
-#dat_train_rownames <- dat_train_rownames %>% 
-#  sample_n(50)
-```
-
-
-# ----- MODELING STARTS HERE ----- ###
-
-## Preprocessing  
-Pre-processing using **Standardization**, which combines both scaling and centering transformations.   
-```{r}
-pp_model <- preProcess(dat_train_rownames, method = c('center', 'scale'))
-dat_train_pp <- predict(pp_model, dat_train_rownames)
-dat_train_pp
-```
-
-```{r}
-#dat_train_pp <- dat_train_pp %>% 
-#  sample_n(50)
-```
-
-
 ## Hieracrhical Clustering Model   
 ```{r}
-distance_data <- dist(dat_train_pp, method = 'euclidean')
+distance_data <- dist(dat_train_rownames, method = 'euclidean')
 hc_complete <- hclust(distance_data, method = 'complete')
 plot(hc_complete, hang = -1, cex = 0.6)
 ```
@@ -469,17 +458,18 @@ dist_data[1]
 ```
 
 ```{r}
-pred_test <- predict(pp_model, dat_test_rownames)
+pred_test <- predict(model_pp, dat_test)
 pred_ibu <- pred_test$ibu
 pred_abv <- pred_test$abv
 dat_test_standardized <- pred_test %>%
-  mutate(abv = pred_abv, ibu = pred_ibu)
+  mutate(abv = pred_abv, ibu = pred_ibu) %>% 
+  mutate(Class = as.factor(hc_cut))
 
 dat_test_standardized
 ```
 
 ```{r}
-predictions <- predict(pp_model, dat_test_standardized)
+predictions <- predict(model_pp, dat_test_standardized)
 predictions
 ```
 
@@ -499,5 +489,8 @@ model_rf <- train(dat_train_pp %>% select(-Class), dat_train_pp$Class, method = 
 model_rf
 ```
 
+```{r}
+model_rf
+```
 
 
