@@ -303,22 +303,16 @@ dat_clean %>%
   arrange(desc(n))
 ```
 
-```{r}
-#dat_selected$beer_name[duplicated(dat_selected$beer_name)]
-```
-
-## Removing columns with duplicate beer names.  
-```{r}
-#dat_no_dups <- dat_clean %>%
-#  distinct(beer_name, .keep_all = TRUE)
-```
-
-## Rownames conversion for Hierachical Clustering  
+## Adding ounces to beer name column and removing columns with duplicate beer names.
 ```{r}
 dat_model <- dat_clean %>% 
   mutate(beer_name = paste0(beer_name, "-", ounces)) %>% 
   distinct(beer_name, .keep_all = TRUE) %>% 
-  mutate(id = row_number())
+  mutate(id = row_number()) %>% 
+  select(-ounces)
+
+#dat_model <- dat_model %>% 
+#  gsub("\\s*\\([^\\)]+\\)","",as.character(dat_model$beer_name))
 ```
 
 ## Data Split Train / Test  based on a predefined set of known and recognizable beer names  
@@ -333,14 +327,14 @@ test_beer_names <- c("Fat Tire Amber Ale-12", "Fat Tire Amber Ale-16", "White Ra
                      "Grateful White-12", "Hazy Day Belgian-Style Wit-16", "Vivant Tripel (2012)-16", "Righteous Ale-16",
                      "Crabtree Oatmeal Stout-16")
 
-dat_test <- dat_model %>%
+dat_test_compare <- dat_model %>%
   filter(beer_name %in% test_beer_names)
 
-dat_train <- dat_model %>% 
- anti_join(dat_test, by = 'id') %>%
+dat_train_cluster <- dat_model %>% 
+ anti_join(dat_test_compare, by = 'id') %>%
  select(-id)
 
-dat_test <- dat_test %>% 
+dat_test_compare <- dat_test_compare %>% 
   select(-id)
 ```
 
@@ -368,97 +362,171 @@ dat_test <- dat_test %>%
 ## Preprocessing  
 Pre-processing using **Standardization**, which combines both scaling and centering transformations.   
 ```{r}
-model_pp <- preProcess(dat_train, method = c('center', 'scale'))
-dat_train_pp <- predict(model_pp, dat_train) %>% 
-  sample_n(30)
+#dat_train <- dat_train %>% sample_n(50)
+model_pp <- preProcess(dat_train_cluster, method = c('center', 'scale'))
+dat_train_pp <- predict(model_pp, dat_train_cluster)
 dat_train_pp
 ```
 
-
-```{r}
-dat_train_rownames <- dat_train_pp %>%
+## Hieracrhical Clustering Model and Plot (Tuned for easy viewing)  
+```{r, fig.height=5.5, fig.width=10}
+dat_train_dendro <- dat_train_pp %>%
+  sample_n(50) %>% 
   column_to_rownames("beer_name")
 
-dat_test_rownames <- dat_test %>%
-  column_to_rownames("beer_name")
-```
-
-## Hieracrhical Clustering Model   
-```{r}
-distance_data <- dist(dat_train_rownames, method = 'euclidean')
+distance_data <- dist(dat_train_dendro, method = 'euclidean')
 hc_complete <- hclust(distance_data, method = 'complete')
 plot(hc_complete, hang = -1, cex = 0.6)
 ```
 
-```{r}
-hc_cut <- cutree(hc_complete, 4)
-dat_train_pp <- dat_train_pp %>%
-  mutate(Class = as.factor(hc_cut))
-
-#hc_cut
-```
-
-
-```{r}
-a <- cutree(hc_complete, 4)
-dat_train_rownames$cluster <- a
-dat_train_rownames %>%
-  group_by(cluster) %>%
-  count() %>%
-  arrange(n)
-
-dat_train_rownames %>%
-  ggplot(aes(x = abv, y = ibu)) +
-  geom_point()
-```
-
-
+### Colored Dendrogram  
 ```{r, fig.height=10, fig.width=10}
-k_val <- 6
-
+k_val <- 5
 hc_complete_dendro <- as.dendrogram(hc_complete)
-
 dend_colored <- hc_complete_dendro %>%
   color_branches(k = k_val) %>%
   color_labels(k = k_val) %>% 
   set("labels_cex", .6)
-
 plot(dend_colored, cex = 0.6, type = "rectangle")
-
 ```
 
-```{r}
+```{r, fig.height=10, fig.width=10}
 cols <- c("#a9a9a9", "#1f77b4", "#ff7f0e", "#2ca02c")
-
 p <- ggdendrogram(hc_complete_dendro,
                    direction   = "tb",
 #                   scale.color = cols,
                    label.size  = 2.5,
                    branch.size = 0.5,
                    expand.y    = 0.2)
-
 mytheme <- theme(axis.text          = element_text(color = "blue"),
                  panel.grid.major.y = element_line(color = "tan",
                                                    size  = 0.25))
 p + mytheme
 ```
 
-# Analysis of Distance Data  
-```{r}
-dist_data <- as.tibble(table(distance_data)) %>% 
-  rename(cluster = n) %>% 
-  arrange(cluster)
-  
 
-dist_data
+## Hieracrhical Clustering Model (with full data to generate final clusters)   
+```{r, fig.width=10}
+distance_data_all <- dist(dat_train_pp, method = 'euclidean')
+hc_complete_all <- hclust(distance_data_all, method = 'complete')
+plot(hc_complete_all, hang = -1, cex = 0.6)
+```
+
+### Cutting the hcust to 5 and creating Class for classification model  
+Below I am using the cutree function to trim the hclust to 5. The clusters are being used to create
+a **Class** variable for the random forest (ranger) classification model.
+```{r}
+hc_cut <- cutree(hc_complete_all, 5)
+
+dat_class_model <- dat_train_pp %>%
+  mutate(Class = as.factor(hc_cut),
+         beer_name = as.factor(beer_name))
+```
+
+Let's take a look at the composition of the 5 clusters and the relationship between abv and ibu.
+```{r}
+dat_class_model$cluster <- hc_cut
+dat_class_model %>%
+  group_by(cluster) %>%
+  count() %>%
+  arrange(n)
+
+dat_class_model %>%
+  ggplot(aes(x = abv, y = ibu)) +
+  geom_point()
+```
+
+## Split Train / Test for the Random Forest Model  
+Here I have incorporated a custom function to perform the train / test split.
+```{r}
+split_train_test = function(df, train_pct = 0.70, seed_number = 123){
+  set.seed(seed_number)
+# ID for splitting
+  df_id <- df %>% 
+    mutate(split_id = row_number())
+# Train set  
+  df_train <- df_id %>%
+    sample_frac(train_pct)
+# Test set  
+  df_test <- df_id %>%
+    anti_join(df_train, by = 'split_id') %>%
+    select(-split_id)
+# Remove the ID
+  df_train <- df_train %>%
+    select(-split_id)
+# Create dfs  
+  df_split <- list(train = as.data.frame(df_train), test = as.data.frame(df_test))
+  return(df_split)
+}
+```
+
+Below I perform the Train / Test Split using the **split_train_test** custom function, and I create
+both the final train and test data frames for use in the rf model and the predictions.  
+```{r}
+dat_split_rf <- split_train_test(dat_class_model, train_pct = 0.75, seed_number = 789)
+
+dat_train_rf <- dat_split_rf$train
+dat_test_rf <- dat_split_rf$test
+```
+
+## Up Sampling for the cluster Class variable  
+```{r}
+dat_train_up_rf <- upSample(dat_train_rf %>% select(-Class), dat_train_rf$Class)
+```
+Look at the UpSample results 
+```{r}
+table(dat_train_up_rf$Class)
+```
+
+UpSample Results
+```{r}
+dat_train_up_rf %>% 
+  group_by(Class) %>% 
+  count()
+```
+
+
+# ---- Classification Model ----
+## Predicting cluster  
+
+```{r}
+train_control <- trainControl(method = 'cv', number = 5, allowParallel = TRUE)
+
+model_rf <- train(dat_train_up_rf %>% select(-Class, cluster),
+                  dat_train_up_rf$Class,
+                  method = 'ranger',
+                  trControl = train_control, respect.unordered.factors=TRUE)
+
+model_rf
 ```
 
 ```{r}
-dist_data[1]
+model_rf$results
 ```
 
 ```{r}
-pred_test <- predict(model_pp, dat_test)
+predictions <- predict(model_pp, dat_test_rf)
+predictions
+```
+
+```{r}
+model_rf_pp <- preProcess(dat_train_up_rf, method = c('center', 'scale'))
+dat_train_rf_pp <- predict(model_rf_pp, dat_train_up_rf)
+dat_train_rf_pp
+```
+
+```{r}
+dat_test_rf_pp <- predict(model_rf_pp, dat_test_rf)
+dat_test_rf_pp
+```
+
+```{r}
+predictions <- predict(model_rf, dat_test_rf_pp)
+predictions
+```
+
+```{r}
+pred_test <- predict(model_pp, dat_test_rf)
 pred_ibu <- pred_test$ibu
 pred_abv <- pred_test$abv
 dat_test_standardized <- pred_test %>%
@@ -469,28 +537,14 @@ dat_test_standardized
 ```
 
 ```{r}
-predictions <- predict(model_pp, dat_test_standardized)
-predictions
-```
-
-
-```{r}
-confusionMatrix(predictions, dat_test_standardized$Class)
-```
-
-# ---- Classification Model ----
-## Predicting cluster  
-
-```{r}
-train_control <- trainControl(method = 'cv', number = 5, allowParallel = TRUE)
-
-model_rf <- train(dat_train_pp %>% select(-Class), dat_train_pp$Class, method = 'ranger', trControl = train_control)
-
-model_rf
+confusionMatrix(predictions1, dat_test_rf)
 ```
 
 ```{r}
-model_rf
+confusionMatrix(predictions, dat_test_rf_pp$Class)
 ```
 
+```{r}
+df_new_beer <- as.data.frame()
+```
 
