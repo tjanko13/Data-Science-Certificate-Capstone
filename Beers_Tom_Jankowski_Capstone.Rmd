@@ -236,23 +236,23 @@ dat_selected %>%
 top_10_states <- dat_selected %>% 
   group_by(state) %>% 
   summarise(top_10 = n()) %>% 
-  arrange(desc(top_10)) %>% 
-  top_n(10)
+  arrange(desc(top_10))
+#  top_n(10)
 
 top_10_states
 ```
 
-## ABV / IBU Relationship  
-
+## Top 10 cities for Breweries  
 ```{r}
-dat_selected %>%
-  select(ibu, abv) %>%
-  ggplot(aes(abv, ibu)) + 
-  geom_point(alpha = .4) +
-  geom_smooth(method = lm, color = 'blue')
+num_cities <- breweries %>%
+  group_by(city) %>%
+  summarise(number_of_breweries = n()) %>%
+  arrange(desc(number_of_breweries))
+head(num_cities,10)
 ```
 
-```{r}
+## Who Likes Bittert Beer?  
+```{r, warning=F}
 dat_selected %>%
   group_by(state) %>%
   mutate(mean_ibu = mean(ibu, na.rm = TRUE)) %>%
@@ -261,6 +261,18 @@ dat_selected %>%
   labs(x = "state", y = "Beer IBU", title = "Who Likes Bitter Beer?")
 ```
 
+
+## ABV / IBU Relationship  
+
+```{r, warning=F}
+dat_selected %>%
+  select(ibu, abv) %>%
+  ggplot(aes(abv, ibu)) + 
+  geom_point(alpha = .4) +
+  geom_smooth(method = lm, color = 'blue')
+```
+
+### Cleaning missing ABV and IBU data values  
 ```{r}
 dat_abv_clean <- dat_selected %>% 
   group_by(style) %>% 
@@ -276,11 +288,13 @@ dat_ibu_clean <- dat_abv_clean %>%
   ungroup()
 ```
 
+### Creating dataset with complete cases  
 ```{r}
 dat_clean_cases <- dat_ibu_clean %>% 
   filter(complete.cases(dat_ibu_clean))
 ```
 
+### Rounding ABV and IBU data for standardization  
 ```{r}
 dat_clean <- dat_clean_cases %>%
   mutate(ibu = round(ibu, 0),
@@ -288,10 +302,10 @@ dat_clean <- dat_clean_cases %>%
 dat_clean
 ```
 
-
+### Final look at missing values  
+As we can see, all the features have 0 missing values.  
 ```{r}
-colSums(is.na(dat_clean))
-round(colSums(is.na(dat_clean)) / nrow(dat_clean), 4)
+colSums(is.na(dat_clean) / nrow(dat_clean))
 ```
 
 ## Looking at duplicates in the beer_name column  
@@ -310,9 +324,6 @@ dat_model <- dat_clean %>%
   distinct(beer_name, .keep_all = TRUE) %>% 
   mutate(id = row_number()) %>% 
   select(-ounces)
-
-#dat_model <- dat_model %>% 
-#  gsub("\\s*\\([^\\)]+\\)","",as.character(dat_model$beer_name))
 ```
 
 ## Data Split Train / Test  based on a predefined set of known and recognizable beer names  
@@ -419,20 +430,24 @@ a **Class** variable for the random forest (ranger) classification model.
 hc_cut <- cutree(hc_complete_all, 5)
 
 dat_class_model <- dat_train_pp %>%
-  mutate(Class = as.factor(hc_cut),
-         beer_name = as.factor(beer_name))
+  mutate(Class = as.factor(hc_cut)) %>%
+  select(abv, ibu, style, state, Class) %>% 
+  mutate(style = as.factor(style),
+         state = as.factor(state),
+         style = fct_lump(style, n = 25),
+         state = fct_lump(state, n = 25))
 ```
 
 Let's take a look at the composition of the 5 clusters and the relationship between abv and ibu.
 ```{r}
-dat_class_model$cluster <- hc_cut
+#dat_class_model$cluster <- hc_cut
 dat_class_model %>%
-  group_by(cluster) %>%
+  group_by(style) %>%
   count() %>%
   arrange(n)
 
 dat_class_model %>%
-  ggplot(aes(x = abv, y = ibu)) +
+  ggplot(aes(x = abv, y = ibu, col = Class)) +
   geom_point()
 ```
 
@@ -492,12 +507,13 @@ dat_train_up_rf %>%
 ```{r}
 train_control <- trainControl(method = 'cv', number = 5, allowParallel = TRUE)
 
-model_rf <- train(dat_train_up_rf %>% select(-Class, cluster),
+model_rf <- train(dat_train_up_rf %>% select(-Class),
                   dat_train_up_rf$Class,
                   method = 'ranger',
-                  trControl = train_control, respect.unordered.factors=TRUE)
+                  importance = "impurity",
+                  trControl = train_control)
 
-model_rf
+model_rf$finalModel$variable.importance
 ```
 
 ```{r}
@@ -505,46 +521,98 @@ model_rf$results
 ```
 
 ```{r}
-predictions <- predict(model_pp, dat_test_rf)
+predictions <- predict(model_rf, newdata = dat_test_rf)
 predictions
 ```
-
+### Random Forest Confusion Matrix  
+Let's take a look at the results of the confusion matrix and statistics. We can see that the forest model is predicting at 99%.
 ```{r}
-model_rf_pp <- preProcess(dat_train_up_rf, method = c('center', 'scale'))
-dat_train_rf_pp <- predict(model_rf_pp, dat_train_up_rf)
-dat_train_rf_pp
+confusionMatrix(predictions, dat_test_rf$Class)
+```
+## Compare the hold-out dataset to the predicted data  
+```{r}
+dat_test_compare_final <- dat_test_compare %>% 
+  select(abv, ibu, style, state)
+
+model_test_pp <- preProcess(dat_test_compare_final, method = c('center', 'scale'))
+dat_test_pp <- predict(model_pp, dat_test_compare_final)
+dat_test_pp
 ```
 
 ```{r}
-dat_test_rf_pp <- predict(model_rf_pp, dat_test_rf)
-dat_test_rf_pp
+# get vectors of the data that went into your model...
+lumped_state <- dat_train_up_rf$state
+lumped_style <- dat_train_up_rf$style
+dat_compare_stan_clean <- dat_test_pp %>%
+  mutate(state = if_else(state %in% lumped_state, state, 'Other'),
+         style = if_else(style %in% lumped_style, style, 'Other'))
 ```
 
 ```{r}
-predictions <- predict(model_rf, dat_test_rf_pp)
-predictions
+predictions <- predict(model_rf, dat_compare_stan_clean)
+dat_compare_stan_clean$Class <- predictions
 ```
 
 ```{r}
-pred_test <- predict(model_pp, dat_test_rf)
-pred_ibu <- pred_test$ibu
-pred_abv <- pred_test$abv
-dat_test_standardized <- pred_test %>%
-  mutate(abv = pred_abv, ibu = pred_ibu) %>% 
-  mutate(Class = as.factor(hc_cut))
-
-dat_test_standardized
+dat_compare_stan_clean$Class
 ```
 
 ```{r}
-confusionMatrix(predictions1, dat_test_rf)
+dat_train_up_rf %>% 
+  select(Class, style) %>% 
+  filter(style != "Other") %>% 
+  filter(Class == 4)
+```
+
+#Providing recommendations to beer customers 
+
+
+```{r}
+new_beer <- tibble(beer_name = c('bud_light', 'guinness', 'red_stripe'), 
+                      abv = c(0.06, 0.045, 0.51), 
+                      ibu = c(24, 65, 82))
+```
+
+
+
+
+
+
+
+
+
+
+# ---- Additional Analysis ----  
+
+
+```{r}
+pred_test <- predict(model_rf, newdata = dat_test_pp)
+pred_test
 ```
 
 ```{r}
-confusionMatrix(predictions, dat_test_rf_pp$Class)
+pred_test[1]
 ```
 
 ```{r}
-df_new_beer <- as.data.frame()
+pred_final <- model_rf$finalModel$predictions %>% 
+  tibble::enframe(name = NULL)
+#pred_final
+```
+
+```{r}
+pred_final %>% 
+  filter(value == 3)
+```
+
+```{r}
+model_rf$finalModel$predictions
+```
+
+```{r}
+dat_train_rf %>% 
+  filter(Class == 3) %>% 
+  filter(style != "Other") %>% 
+  filter(state != "Other")
 ```
 
