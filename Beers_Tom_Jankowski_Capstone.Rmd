@@ -1,8 +1,8 @@
 ---
 title: "Canned Craft Beer Recommender.Rmd"
 author: "Tom_Jankowski"
-date: "10/14/2019"
-output: pdf_document
+date: "12/07/2019"
+output: html_document
 toc: true
 toc_depth: 3
 number_sections: true
@@ -15,17 +15,21 @@ highlight: tango
 ### Analysis in R -- by Tom Jankowski  
 
 # Package and Library installation and loading.  
-```{r setup, include=FALSE}
+
+The required packages and libraries are shown below:
+
+```{r setup, warning=FALSE, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 #update.packages(ask = FALSE)
 #install.packages("rstan")
 #install.packages('dendextend')
 #install.packages("ggdendro")
 #install.packages('ape')
-#install.packages("caret")
+install.packages("caret")
+#install.packages("shiny")
 library("ape")
 library("tidyverse")
-library("rattle")
+#library("rattle")
 library("rpart")
 library("caret")
 library("ranger")
@@ -34,18 +38,22 @@ library("dendextend")
 library("gridExtra")
 library("ggdendro")
 library("ggplot2")
+library("DMwR")
+
 
 # Set Seed
 set.seed(123)
 ```
 
-# Dataset
-## Canned beer dataset obtained from kaggle.com: [link] (https://www.kaggle.com/nickhould/craft-cans). 
+# Dataset  
+Canned beer dataset obtained from kaggle.com: [link] (https://www.kaggle.com/nickhould/craft-cans). 
 
 The dataset consists of two files:  
   - beers.csv (2410 obs. of 8 variables).  
   - breweries.csv (558 obs of 4 variables).  
 More detailed analysis of each dataset is provided in Exploratory Data Analysis (EDA) section below.
+
+The datasets are read as csv files.
 
 ```{r}
 beers <- read_csv('beers_updated.csv')
@@ -54,18 +62,21 @@ breweries <- read_csv('breweries.csv')
 
 # Craft Canned Beer Recommender Application -- Business Case  
 
-Craft beer drinkers use different forms of information to select a beer. These include beer price, style, beer name, labeling, alcohol by volume (abv), international bitterness units (ibu), flavor profile, brewery, and the access they have to beers in thier local city, state, and brewery taphouses. Unless you live under a rock, you've no doubt noticed the booming craft beer market. According to the Brewers Association - an American trade group representing craft brewers, suppliers, and distributors, sales account for 24% of the U.S. beer market worth over $114 billion. Beer in the U.S. is manufactured by more than 7,000 breweries, which range in size from industry giants to brew pubs and microbreweries. With thousnds of brews to choose from, how do beer lovers choose a beer among a dizzying array of beer options. This is where the **Craft Canned Beer Rcommender App** helps make these choices a bit easier. The **Craft Canned Beer Rcommender App** is designed to help customers of beer retailers (such as liqour stores, grocery stores, and convenient stores) choose a beer based on a set of criteria including: beer abv, beer ibu, beer name, beer style, brewery name, city and state. Reatilers who offer its customers with the option to use the Craft Canned Beer Rcommender App will provide a better service to its customers increasing customer satisfation and loyalty, which increase sales and profit.
+Craft beer drinkers use different forms of information to select a beer. These include beer price, style, beer name, labeling, alcohol by volume (abv), international bitterness units (ibu), flavor profile, brewery, and the access they have to beers in their local city, state, and brewery taphouses. The craft beer market is booming. According to the Brewers Association - an American trade group representing craft brewers, suppliers, and distributors, sales account for 24% of the U.S. beer market worth over $114 billion. Beer in the U.S. is manufactured by more than 7,000 breweries, which range in size from industry giants to brew pubs and microbreweries. With thousands of brews to choose from, how do beer lovers choose a beer among a dizzying array of beer options. This is where the **Craft Canned Beer Recommender App** helps make these choices a bit easier. The **Craft Canned Beer Recommender App** is designed to help customers of beer retailers (such as liquor stores, grocery stores, and convenient stores) choose a beer based on a set of criteria. This beta version of the App uses beer abv and beer ibu (both numeric variables) as the given criteria to recommend beers from the dataset. The App output recommends beers that are similar to the inputted beer criteria, and recommends similar breweries and states who produce those beers. Retailers who offer its customers with the option to use the Craft Canned Beer Recommender App will provide a better service to its customers increasing customer satisfaction and loyalty, which increase sales and profit. Future efforts to develop this Application could include adding additional continuous predictive variables such as price, serving temperature, volume of CO2, standard reference method (SRM) to representing the color of a beer, and beer profile metrics. These added variables would increase the **Craft Canned Beer Recommender App's** robustness and usability.
 
+# Data Cleaning and Wrangling  
 
-# Data cleaning and wrangling on the **breweries** dataset.  
+## Data cleaning and wrangling on the **breweries** dataset.  
 
-## Descriptive statistics provides a quick summary of the features in the beers dataset.  
+### Descriptive Statistics  
+Summary provides a quick summary of the features in the breweries dataset. We can see the ranges of the numeric variables as well as the number of NA's (not available) in the dataset.  
 
 ```{r}
 summary(beers)
 ```
 
-## Glimpse provides a quick look at the actual data values in the beers dataset.  
+### Glimpse  
+Glimpse provides a quick look at a sample of the data values in the beers dataset. We can also confirm the datatypes of each variable as seen in the second column.    
 
 ```{r}
 glimpse(beers)
@@ -73,7 +84,8 @@ glimpse(beers)
 
 ## Data cleaning and wrangling on the **breweries** dataset.  
 
-## Descriptive statistics provides a quick summary of the features in the breweries dataset.  
+### Descriptive Statistics  
+provides a quick summary of the features in the breweries dataset.  
 
 ```{r}
 summary(breweries)
@@ -88,13 +100,13 @@ glimpse(breweries)
 ## Join the 2 datasets  
 ### Left Join  
 
-To work with both datasets, I will need to perform a left join (beers to breweries). Here I am creating a new data frame named **dat**.
+To work with both datasets, I will need to perform a left join (beers to breweries). Here I am creating a new data frame named **dat** to be used in the modeling.
 ```{r}
 dat <- beers %>% 
 left_join(breweries, by = c('brewery_id' = 'X1'))
 ```
 
-## A glimpse at the joined dataset shows my columns, datatypes, and sample values.  
+## A glimpse at the joined dataset shows columns, datatypes, and sample values.  
 
 ```{r}
 glimpse(dat)
@@ -111,10 +123,10 @@ dat_selected <- dat %>%
   select(-id, -brewery_id, -X1)
 ```
 
-The new **dat_selected** dataframe contains 2410 observations and 8 columns.
+The new **dat_selected** data frame contains 2410 observations and 8 columns.
 
 # Handling Missing Values  
-# Handling NAs  
+## Calculating the number of NAs and performing transformations  
 
 I need to determine the sum and proportion of missing values in my joined dataset. As seen below, It appears that I have a number of missing values across the columns that must be addressed.
 
@@ -129,26 +141,20 @@ The .08% (2 obs.) missing values in the **style** column are not of concern sinc
 dat_selected <- dat_selected[-c(1555, 1556), ]
 ```
 
-```{r}
-dat_selected %>% 
-  group_by(brewery_name) %>% 
-  summarise(n=n())
-```
-
-
 The larger concern is the 41.62% (1003 obs.) missing values in the **ibu** column. These missing values, along with the 1.16% (28 obs.) in the **abv** column could be handled in a number of ways. To determine a course of action, I will examine any potential associations between **ibu** and other variables.   
 
-First I will examine the distribution of ibu NAs in the style column. 
+First I will examine the distribution of the style column and the ibu NAs related to beer style.  
 
-```{r}
+```{r, fig.height=10, fig.width=10}
 dat_selected %>% 
   group_by(style) %>% 
-  filter(is.na(ibu)) %>% 
-  count() %>% 
-  ggplot(aes(x=style, y = n)) +
-  geom_point()
+  count() %>%
+  arrange(desc(n)) %>% 
+  ungroup() %>% 
+  group_by(style)
 ```
-The proportion of ibu NAs related to syle don't appear to have a relationship.
+
+Number of ibu NAs related to style.
 
 ```{r}
 ibu_na <- dat_selected %>% 
@@ -157,9 +163,21 @@ ibu_na <- dat_selected %>%
   summarise(ibu_na = n()) %>%
   arrange(desc(ibu_na)) %>% 
   ungroup() %>% 
-  select(ibu_na)
+  select(style, ibu_na)
 ibu_na
 ```
+
+```{r, fig.height=10, fig.width=10}
+dat_selected %>% 
+  group_by(style) %>% 
+  filter(is.na(ibu)) %>% 
+  count() %>% 
+  ggplot(aes(x=style, y = n)) +
+  geom_point() + 
+  coord_flip()
+```
+
+The proportion of ibu NAs related to style don't appear to have a relationship. They appear to be relatively equal for all beer styles.   
 
 ```{r}
 ibu_non_na <- dat_selected %>% 
@@ -168,13 +186,13 @@ ibu_non_na <- dat_selected %>%
   summarise(ibu_value = n()) %>%
   arrange(desc(ibu_value)) %>% 
   ungroup() %>% 
-  select(ibu_value)
+  select(style, ibu_value)
 ibu_non_na
 ```
 
 ## ABV NAs -- Analysis of missing values  
 
-A look at the missing abv values.
+Next, I need to examine the NAs in the abv column. 
 
 ```{r}
 dat_selected %>% 
@@ -182,7 +200,8 @@ dat_selected %>%
   filter(is.na(abv)) %>% 
   count() %>% 
   ggplot(aes(x=style, y = n)) +
-  geom_point()
+  geom_point() +
+  coord_flip()
 ```
 
 Missing abv values.
@@ -193,8 +212,6 @@ abv_na <- dat_selected %>%
   filter(is.na(abv)) %>% 
   summarise(abv_na = n()) %>%
   arrange(desc(abv_na))
-#  ungroup()
-#  select(abv_na)
 abv_na
 ```
 
@@ -206,73 +223,14 @@ abv_non_na <- dat_selected %>%
   filter(!is.na(abv)) %>% 
   summarise(abv_value = n()) %>%
   arrange(desc(abv_value))
-#  ungroup()
-#  select(abv_value)
 abv_non_na
 ```
 
-```{r}
+# Handling NAs 
 
-```
+## Cleaning missing ABV and IBU data values  
+Since the abv and ibu NAs appear to be equally distributed among all styles, below I am replacing the NAs with the average values for each variable. 
 
-# Exploratory Data Analysis (EDA)  
-
-With a joined and clean dataset, I will analyze the data to identify distributions and any variable relationships. The first analysis that interests me is the beer styles that are most common. I will use a bar chart to show this distribution. We can see that IPAs, Pale ales and other ales dominate the most common styles.
-
-```{r}
-dat_selected %>% 
-  group_by(style) %>%
-  summarise(count = n()) %>%
-  filter(count > 50) %>%
-  ggplot(aes(reorder(style, count), count)) +
-  geom_col(fill = "tan") +
-  coord_flip() +
-  labs(title = "Top Beer Styles", subtitle = "Greater than 50 beers", x = "Sum of Beer Styles > 50", y = "Beer Styles")
-```
-
-## Top 10 States for craft beer in the dataset.  
-
-```{r}
-top_10_states <- dat_selected %>% 
-  group_by(state) %>% 
-  summarise(top_10 = n()) %>% 
-  arrange(desc(top_10))
-#  top_n(10)
-
-top_10_states
-```
-
-## Top 10 cities for Breweries  
-```{r}
-num_cities <- breweries %>%
-  group_by(city) %>%
-  summarise(number_of_breweries = n()) %>%
-  arrange(desc(number_of_breweries))
-head(num_cities,10)
-```
-
-## Who Likes Bittert Beer?  
-```{r, warning=F}
-dat_selected %>%
-  group_by(state) %>%
-  mutate(mean_ibu = mean(ibu, na.rm = TRUE)) %>%
-  ggplot(aes(x = reorder(state, -mean_ibu), y = ibu, fill = mean_ibu)) + 
-  geom_boxplot() + 
-  labs(x = "state", y = "Beer IBU", title = "Who Likes Bitter Beer?")
-```
-
-
-## ABV / IBU Relationship  
-
-```{r, warning=F}
-dat_selected %>%
-  select(ibu, abv) %>%
-  ggplot(aes(abv, ibu)) + 
-  geom_point(alpha = .4) +
-  geom_smooth(method = lm, color = 'blue')
-```
-
-### Cleaning missing ABV and IBU data values  
 ```{r}
 dat_abv_clean <- dat_selected %>% 
   group_by(style) %>% 
@@ -289,12 +247,14 @@ dat_ibu_clean <- dat_abv_clean %>%
 ```
 
 ### Creating dataset with complete cases  
+To ensure my dataset has rows with complete data, I'm filtering out any rows that are not complete.  
 ```{r}
 dat_clean_cases <- dat_ibu_clean %>% 
   filter(complete.cases(dat_ibu_clean))
 ```
 
 ### Rounding ABV and IBU data for standardization  
+Some of the ibu and abv data values are expressed with varying decimal places such as ibu (30.0 and 30), so below I am rounding the values for consistency.  
 ```{r}
 dat_clean <- dat_clean_cases %>%
   mutate(ibu = round(ibu, 0),
@@ -305,10 +265,12 @@ dat_clean
 ### Final look at missing values  
 As we can see, all the features have 0 missing values.  
 ```{r}
-colSums(is.na(dat_clean) / nrow(dat_clean))
+colSums(is.na(dat_clean))
 ```
 
-## Looking at duplicates in the beer_name column  
+## Examining Duplicates  
+Many of the values in the beer_name column have duplicates. Some are purely duplicate entries, but others are repeated because of differing can sizes (12 oz., 16 oz. etc.). So, these duplicates must be addressed.  
+
 ```{r}
 dat_clean %>% 
   group_by(beer_name, ounces) %>% 
@@ -317,7 +279,9 @@ dat_clean %>%
   arrange(desc(n))
 ```
 
-## Adding ounces to beer name column and removing columns with duplicate beer names.
+## Handling Duplicates  
+To give each beer name a unique entry, I have added the ounces value to the end of each beer name. Then I removed the rows with duplicate beer names.  
+
 ```{r}
 dat_model <- dat_clean %>% 
   mutate(beer_name = paste0(beer_name, "-", ounces)) %>% 
@@ -326,7 +290,93 @@ dat_model <- dat_clean %>%
   select(-ounces)
 ```
 
-## Data Split Train / Test  based on a predefined set of known and recognizable beer names  
+# Exploratory Data Analysis (EDA)  
+
+With a joined and clean dataset, I will analyze the data to identify distributions and any variable relationships. The first analysis that interests me is the beer styles that are most common. I will use a bar chart to show this distribution. We can see that IPAs, Pale Ales and other Ales dominate the most common styles.  
+
+```{r, fig.width=10}
+dat_selected %>% 
+  group_by(style) %>%
+  summarise(count = n()) %>%
+  filter(count > 25) %>%
+  ggplot(aes(reorder(style, count), count)) +
+  geom_col(fill = "tan") +
+  coord_flip() +
+  labs(title = "Top Beer Styles", subtitle = "Greater than 25 beers", x = "Sum of Beer Styles > 50", y = "Beer Styles")
+```
+
+## Top 10 States for craft beer in the dataset.  
+
+```{r, fig.width=10}
+dat_selected %>% 
+  group_by(state) %>%
+  summarise(count = n()) %>%
+#  filter(count > 100) %>%
+  ggplot(aes(reorder(state, count), count)) +
+  geom_col(fill = "tan") +
+  coord_flip() +
+  labs(title = "Top Craft Beer States", subtitle = "Greater than 20 beers", x = "Sum of States > 20", y = "States")
+```
+
+
+```{r, warning=F}
+top_10_states <- dat_selected %>% 
+  group_by(state) %>% 
+  summarise(top_10 = n()) %>% 
+  arrange(desc(top_10)) %>% 
+  top_n(20) %>% 
+  ggplot(aes(x = state, y = top_10)) +
+  geom_col(fill="blue")
+top_10_states
+```
+
+## Top 10 cities for Breweries  
+Below are the top 10 craft beer cities within the dataset. We can see that Portland breaks out as the top city for number of breweries with Seattle, Boulder, and Chicago closely tied for second place.
+
+```{r}
+num_cities <- breweries %>%
+  group_by(city) %>%
+  summarise(number_of_breweries = n()) %>%
+  arrange(desc(number_of_breweries)) %>%
+  top_n(10) %>%
+  ggplot(aes(x=city, y = number_of_breweries)) +
+  geom_col(fill="blue") +
+  coord_flip()
+num_cities
+```
+
+## Who Likes Bitter Beer?  
+Below is a box and whisker plot showing the average ibu for all states. We can see that 
+```{r, warning=F}
+dat_selected %>%
+  group_by(state) %>%
+  mutate(mean_ibu = mean(ibu, na.rm = TRUE)) %>%
+  ggplot(aes(x = reorder(state, -mean_ibu), y = ibu, fill = mean_ibu)) + 
+  geom_boxplot() + 
+  labs(x = "state", y = "Beer IBU", title = "Who Likes Bitter Beer?") +
+  scale_y_continuous(minor_breaks = seq(0, 12, 4)) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_continuous(low = 'gray', high = 'blue', name = "avg ibu")
+```
+
+## ABV / IBU Relationship  
+
+```{r, warning=F}
+dat_selected %>%
+  select(ibu, abv) %>%
+  ggplot(aes(abv, ibu)) + 
+  geom_point(alpha = .4) +
+  geom_smooth(method = lm, color = 'blue')
+```
+
+# Modeling Approach  
+
+The modeling approach for this project is to use a hierarchical clustering model to cluster the beers based on abv and ibu, then train a random forest model based on the clusters. This will allow the classification of a new set of beers into the clusters and allow recommending beers that are similar within an associated cluster. Once a cluster is identified, additional recommendations can be made including similar breweries and the states within the associated cluster.  
+
+## Hold-out Dataset  
+The below dataset ***test_beer_names*** is a hold-out set of 30 manually selected, known beers, which will be directly compared to the output cluster assignments of the random forest model. This dataset helps better understand the results and performance of the random forest model.  
+
 ```{r}
 test_beer_names <- c("Fat Tire Amber Ale-12", "Fat Tire Amber Ale-16", "White Rascal-12", "Boston Lager-12",
                      "Boston Lager-16", "Mirror Pond Pale Ale-12", "1554 Black Lager-12", "Dale's Pale Ale (2012)-12",
@@ -338,6 +388,7 @@ test_beer_names <- c("Fat Tire Amber Ale-12", "Fat Tire Amber Ale-16", "White Ra
                      "Grateful White-12", "Hazy Day Belgian-Style Wit-16", "Vivant Tripel (2012)-16", "Righteous Ale-16",
                      "Crabtree Oatmeal Stout-16")
 
+# Data Split Train / Test based on a predefined set of known and recognizable beer names
 dat_test_compare <- dat_model %>%
   filter(beer_name %in% test_beer_names)
 
@@ -349,51 +400,49 @@ dat_test_compare <- dat_test_compare %>%
   select(-id)
 ```
 
-### Original train / test split code  
+## Pre-Processing  
+
+Prior to running the actual model, I must first do pre-processing on the numeric variables. I will use **Standardization**, which combines both scaling and centering transformations. Standardization centers the data around 0 and scales the data with respect to the standard deviation. Centering subtracts the mean of the variable and scaling divides by the standard deviation.  
+
 ```{r}
-#dat_model <- dat_model %>% 
-#  mutate(id = row_number())
-
-#dat_train <- dat_model %>%
-#  sample_frac(0.75)
-
-#dat_test <- dat_model %>%
-# anti_join(dat_train, by = 'id') %>%
-# select(-id) %>%
-#  column_to_rownames("beer_name")
-
-#dat_train <- dat_train %>%
-# select(-id) %>%
-# sample_n(50) %>% 
-# column_to_rownames("beer_name")
-```
-
-# ----- MODELING STARTS HERE ----- ###
-
-## Preprocessing  
-Pre-processing using **Standardization**, which combines both scaling and centering transformations.   
-```{r}
-#dat_train <- dat_train %>% sample_n(50)
 model_pp <- preProcess(dat_train_cluster, method = c('center', 'scale'))
 dat_train_pp <- predict(model_pp, dat_train_cluster)
 dat_train_pp
 ```
 
-## Hieracrhical Clustering Model and Plot (Tuned for easy viewing)  
-```{r, fig.height=5.5, fig.width=10}
+## Hierarchical Clustering Model  
+
+The Hierarchical Clustering Model is run using **euclidean distance** measurement, and uses the **complete linkage** method, which defines the cluster distance between two clusters to be the maximum distance between their individual components.  
+
+The below colored **Dendrogram** depicts the joined clusters and the distances of the clusters. With a k-value of 5, we can see the five clusters. For ease of viewing the Dendrogram, the data is sampled to 50 cases.
+
+```{r, warning=FALSE}
 dat_train_dendro <- dat_train_pp %>%
   sample_n(50) %>% 
   column_to_rownames("beer_name")
 
 distance_data <- dist(dat_train_dendro, method = 'euclidean')
 hc_complete <- hclust(distance_data, method = 'complete')
-plot(hc_complete, hang = -1, cex = 0.6)
 ```
 
-### Colored Dendrogram  
-```{r, fig.height=10, fig.width=10}
+```{r, warning=FALSE, fig.height=8, fig.width=10}
 k_val <- 5
-hc_complete_dendro <- as.dendrogram(hc_complete)
+dend_colored <- hc_complete %>%
+  color_branches(k = k_val) %>%
+  color_labels(k = k_val) %>% 
+  set("labels_cex", .7)
+plot(dend_colored, cex = 0.6, type = "rectangle", hang = 100)
+```
+
+## Hierarchical Clustering Model (with full data to generate final clusters)   
+We see very similar clustering results with the full dataset. Despite the poor readability, we see 5 clusters.
+
+```{r, fig.width=10, fig.height=5}
+distance_data_all <- dist(dat_train_pp, method = 'euclidean')
+hc_complete_all <- hclust(distance_data_all, method = 'complete')
+
+k_val <- 5
+hc_complete_dendro <- as.dendrogram(hc_complete_all)
 dend_colored <- hc_complete_dendro %>%
   color_branches(k = k_val) %>%
   color_labels(k = k_val) %>% 
@@ -401,48 +450,26 @@ dend_colored <- hc_complete_dendro %>%
 plot(dend_colored, cex = 0.6, type = "rectangle")
 ```
 
-```{r, fig.height=10, fig.width=10}
-cols <- c("#a9a9a9", "#1f77b4", "#ff7f0e", "#2ca02c")
-p <- ggdendrogram(hc_complete_dendro,
-                   direction   = "tb",
-#                   scale.color = cols,
-                   label.size  = 2.5,
-                   branch.size = 0.5,
-                   expand.y    = 0.2)
-mytheme <- theme(axis.text          = element_text(color = "blue"),
-                 panel.grid.major.y = element_line(color = "tan",
-                                                   size  = 0.25))
-p + mytheme
-```
-
-
-## Hieracrhical Clustering Model (with full data to generate final clusters)   
-```{r, fig.width=10}
-distance_data_all <- dist(dat_train_pp, method = 'euclidean')
-hc_complete_all <- hclust(distance_data_all, method = 'complete')
-plot(hc_complete_all, hang = -1, cex = 0.6)
-```
-
 ### Cutting the hcust to 5 and creating Class for classification model  
+
 Below I am using the cutree function to trim the hclust to 5. The clusters are being used to create
-a **Class** variable for the random forest (ranger) classification model.
+a **Class** variable for the random forest (ranger) classification model.  
+
 ```{r}
 hc_cut <- cutree(hc_complete_all, 5)
 
+dat_class_unfiltered <- dat_train_pp %>% 
+  mutate(Class = as.factor(hc_cut))
+
 dat_class_model <- dat_train_pp %>%
-  mutate(Class = as.factor(hc_cut)) %>%
-  select(abv, ibu, style, state, Class) %>% 
-  mutate(style = as.factor(style),
-         state = as.factor(state),
-         style = fct_lump(style, n = 25),
-         state = fct_lump(state, n = 25))
+  mutate(Class = as.factor(hc_cut)) %>% 
+  select(abv, ibu, Class)
 ```
 
 Let's take a look at the composition of the 5 clusters and the relationship between abv and ibu.
 ```{r}
-#dat_class_model$cluster <- hc_cut
 dat_class_model %>%
-  group_by(style) %>%
+  group_by(Class) %>%
   count() %>%
   arrange(n)
 
@@ -452,7 +479,9 @@ dat_class_model %>%
 ```
 
 ## Split Train / Test for the Random Forest Model  
-Here I have incorporated a custom function to perform the train / test split.
+
+Here I have incorporated a custom function to perform the train / test split of the dataset for the random forest model. I have chosen a 70/30 split.  
+
 ```{r}
 split_train_test = function(df, train_pct = 0.70, seed_number = 123){
   set.seed(seed_number)
@@ -477,8 +506,9 @@ split_train_test = function(df, train_pct = 0.70, seed_number = 123){
 
 Below I perform the Train / Test Split using the **split_train_test** custom function, and I create
 both the final train and test data frames for use in the rf model and the predictions.  
+
 ```{r}
-dat_split_rf <- split_train_test(dat_class_model, train_pct = 0.75, seed_number = 789)
+dat_split_rf <- split_train_test(dat_class_model, train_pct = 0.75, seed_number = 123)
 
 dat_train_rf <- dat_split_rf$train
 dat_test_rf <- dat_split_rf$test
@@ -488,23 +518,23 @@ dat_test_rf <- dat_split_rf$test
 ```{r}
 dat_train_up_rf <- upSample(dat_train_rf %>% select(-Class), dat_train_rf$Class)
 ```
-Look at the UpSample results 
+
+## UpSample Results  
+
+The table below shows the upsampling results. We see that the clusters were upsampled to 1098 cases per cluster.
+
 ```{r}
+table(dat_train_rf$Class)
 table(dat_train_up_rf$Class)
 ```
 
-UpSample Results
-```{r}
-dat_train_up_rf %>% 
-  group_by(Class) %>% 
-  count()
-```
-
-
 # ---- Classification Model ----
+
 ## Predicting cluster  
 
-```{r}
+Next, I have trained a ***random forest model***. The 5 clusters generated in the hierarchical clustering model will be used to classify new beer data into one of the five clusters, as we will see below.  
+
+```{r, warning=F}
 train_control <- trainControl(method = 'cv', number = 5, allowParallel = TRUE)
 
 model_rf <- train(dat_train_up_rf %>% select(-Class),
@@ -516,103 +546,323 @@ model_rf <- train(dat_train_up_rf %>% select(-Class),
 model_rf$finalModel$variable.importance
 ```
 
+## Random Forest Model Results  
+
+As we see in the model results below, the accuracy of the random forest model is 99.9%. The high accuracy is due to the strong correlation between abv and ibu.  
+
 ```{r}
 model_rf$results
 ```
+
+# Model Predictions  
+
+The classification model assigns the 567 beers in the standardized test dataset to a cluster, and we can see these assignments listed below in the model predictions.   
 
 ```{r}
 predictions <- predict(model_rf, newdata = dat_test_rf)
 predictions
 ```
-### Random Forest Confusion Matrix  
-Let's take a look at the results of the confusion matrix and statistics. We can see that the forest model is predicting at 99%.
+
+## Random Forest Model Confusion Matrix  
+
+Let's take a look at the results of the confusion matrix and statistics. We can see that the forest model is predicting at 100%, and all 567 beers in the test dataset have been accurately assigned.  
+
 ```{r}
 confusionMatrix(predictions, dat_test_rf$Class)
 ```
+
+# Understanding the Hold-out Dataset   
+
 ## Compare the hold-out dataset to the predicted data  
+
+The hold-out dataset must be run through the **predict** function to receive the standardization generated in the model_pp. This is done prior to generating predictions.  
+
 ```{r}
 dat_test_compare_final <- dat_test_compare %>% 
-  select(abv, ibu, style, state)
-
-model_test_pp <- preProcess(dat_test_compare_final, method = c('center', 'scale'))
+  select(abv, ibu)
 dat_test_pp <- predict(model_pp, dat_test_compare_final)
 dat_test_pp
 ```
 
-```{r}
-# get vectors of the data that went into your model...
-lumped_state <- dat_train_up_rf$state
-lumped_style <- dat_train_up_rf$style
-dat_compare_stan_clean <- dat_test_pp %>%
-  mutate(state = if_else(state %in% lumped_state, state, 'Other'),
-         style = if_else(style %in% lumped_style, style, 'Other'))
-```
+## Create Predictions  
 
-```{r}
-predictions <- predict(model_rf, dat_compare_stan_clean)
-dat_compare_stan_clean$Class <- predictions
-```
-
-```{r}
-dat_compare_stan_clean$Class
-```
-
-```{r}
-dat_train_up_rf %>% 
-  select(Class, style) %>% 
-  filter(style != "Other") %>% 
-  filter(Class == 4)
-```
-
-#Providing recommendations to beer customers 
-
-
-```{r}
-new_beer <- tibble(beer_name = c('bud_light', 'guinness', 'red_stripe'), 
-                      abv = c(0.06, 0.045, 0.51), 
-                      ibu = c(24, 65, 82))
-```
-
-
-
-
-
-
-
-
-
-
-# ---- Additional Analysis ----  
-
+With a standardized hold-out dataset, I created the cluster predictions. I will directly compare these predictions to the **dat_train_unfiltered** dataset that includes all the features for comparison.   
 
 ```{r}
 pred_test <- predict(model_rf, newdata = dat_test_pp)
 pred_test
 ```
 
+## Analyze and Understand the Clusters  
+
+Filtering the clustered dataset by **Class**, we can get a better understanding of the general characteristics of the beers in each cluster, such as style and beer name.  
+
+
 ```{r}
-pred_test[1]
+dat_class_unfiltered %>% 
+  filter(Class == 4) %>% 
+  select(Class, style, beer_name, everything())
+```
+
+## Label the Clusters  
+
+After analyzing all **5 clusters**, I have generally labeled each cluster as follows:  
+
+**Clusters**
+**1. Ales&Lagers(Mid ABV/IBU)**  
+**2. American IPAs(Mid ABV-Higher IBU)**  
+**3. Double/Imperial(High ABV/IBU)**  
+**4. Wheaty/Special(High ABV-Lower IBU)**  
+**5. Highest ABV**  
+
+```{r}
+clust_label <- c("Ales&Lagers(Mid ABV/IBU)", "American IPAs(Mid ABV-Higher IBU)", "Double/Imperial(High ABV/IBU)", "Wheaty/Special(High ABV-Lower IBU)", "Highest ABV")
+
+dat_test_compare_label <- dat_test_compare %>%
+  
+  mutate(pred_clust = pred_test) %>% 
+  mutate(pred_clust = paste0(pred_test, " - ", if_else(pred_clust == 1, clust_label[1], (if_else(pred_clust == 2, clust_label[2], (if_else(pred_clust == 3, clust_label[3], (if_else(pred_clust == 4, clust_label[4], (if_else(pred_clust == 5, clust_label[5],""))))))))))) %>% 
+  select(pred_clust, style, abv, ibu, beer_name)
+
+dat_test_compare_label
+```
+
+# Demonstration of the Canned Craft Beer Recommender Application  
+
+## Example of Customer Beer Recommendation  
+
+Let's run the Canned Craft Beer Recommender Application with some customer input data. Provide ABV and IBU to the **craft_beer_app** function below to output recommended beers from the selection features. There are 5 selection features:
+   1. Median ABV of Cluster  
+   2. Randomly Sampled from total Cluster  
+   3. Randomly Sampled from the Top Style in Cluster  
+   4. Highest IBU of Cluster  
+   5. Lowest ABV of Cluster  
+
+Also, input the number (num) of requested beers per selection feature.  
+
+```{r}
+# Defaults are the mean of both abv and ibu.
+craft_beer_app <- function(abv_in = 0.056, ibu_in = 35, num = 1){
+  cust_beer_in <- tibble(abv = c(abv_in), ibu = c(ibu_in)) # Passing in the arguments to the a tibble  
+  cust_beer_pp <- predict(model_pp, cust_beer_in) # Running the pre-processing for variables.
+  cust_pred <- predict(model_rf, newdata = cust_beer_pp) # Running the rf model. 
+
+  med_abv <- dat_class_unfiltered %>%
+    filter(Class == cust_pred)
+  med_abv_value <- median(med_abv$abv) # Creating median abv value.
+
+  med_ibu <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred)
+  med_ibu_value <- median(med_ibu$ibu) # Creating median ibu value (Not currently used) 
+
+# Beer #1 Selection (Median ABV of Cluster) 
+  rec_beer_1 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>% 
+    filter(abv == med_abv_value) %>%
+    sample_n(num) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #2 Selection (Randomly Sampled from total Cluster)
+  rec_beer_2 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>%
+    sample_n(num) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #3 Selection (Randomly Sampled from the Top Style in Cluster)
+  dat_cust_beer_3 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>%
+    group_by(style) %>%
+    count() %>%
+    arrange(desc(n))
+  style_1 <- as.character(dat_cust_beer_3[1,1])
+  
+  rec_beer_3 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>% 
+    filter(style == style_1) %>%
+    sample_n(num) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #4 Selection (Highest IBU of Cluster)
+  max_ibu <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred)
+  max_ibu_value <- max(max_ibu$ibu) # Creating max ibu value 
+  
+  rec_beer_4 <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred) %>%
+    filter(ibu == max_ibu_value) %>% 
+    sample_n(num) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #5 Selection (Lowest ABV of Cluster)
+  min_abv <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred)
+  min_abv_value <- min(min_abv$abv) # Creating min abv value 
+  
+  rec_beer_5 <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred) %>%
+    filter(abv == min_abv_value) %>% 
+    sample_n(num) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+    
+# Binding all 3 beer selections and returning the final output.  
+  rec_beers_final <- bind_rows(rec_beer_1, rec_beer_2, rec_beer_3, rec_beer_4, rec_beer_5)
+  return(rec_beers_final)
+}
+```
+
+## Craft Beer Application   
+
+### Reminder of the Cluster Labels  
+
+**Clusters**
+**1. Ales&Lagers(Mid ABV/IBU)**
+**2. American IPAs(Mid ABV-Higher IBU)**
+**3. Double/Imperial(High ABV/IBU)**
+**4. Wheaty/Special(High ABV-Lower IBU)**
+**5. Highest ABV**
+
+```{r}
+craft_beer_app(0.120, 70, 1)
+```
+
+#-----------------------------------------------------------------------------------------------------------
+
+## Example of Customer Beer Recommendations  
+### Additional Selections for Brewery, State and City  
+
+Let's run the Canned Craft Beer Recommender Application with some customer input data. Let's run the Canned Craft Beer Recommender Application with some customer input data. Provide ABV, IBU and NUM into the vectors below select beers by selection features, brewery, state, and city.  
+
+```{r}
+abv_in <- c(0.081)
+ibu_in <- c(80)
+num_feature <- c(1)
+num_brew <- c(1)
+num_state <- c(1)
+num_city <- c(1)
+```
+
+
+```{r}
+# Defaults are the mean of both abv and ibu.
+  cust_beer_in <- tibble(abv = c(abv_in), ibu = c(ibu_in)) # Passing in the arguments to the a tibble  
+  cust_beer_pp <- predict(model_pp, cust_beer_in) # Running the pre-processing for variables.
+  cust_pred <- predict(model_rf, newdata = cust_beer_pp) # Running the rf model. 
+
+  med_abv <- dat_class_unfiltered %>%
+    filter(Class == cust_pred)
+  med_abv_value <- median(med_abv$abv) # Creating median abv value.
+
+  med_ibu <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred)
+  med_ibu_value <- median(med_ibu$ibu) # Creating median ibu value (Not currently used) 
+
+# Beer #1 Selection (Median ABV of Cluster) 
+  rec_beer_1 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>% 
+    filter(abv == med_abv_value) %>%
+    sample_n(num_feature) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #2 Selection (Randomly Sampled from total Cluster)
+  rec_beer_2 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>%
+    sample_n(num_feature) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #3 Selection (Randomly Sampled from the Top Style in Cluster)
+  dat_cust_beer_3 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>%
+    group_by(style) %>%
+    count() %>%
+    arrange(desc(n))
+  style_1 <- as.character(dat_cust_beer_3[1,1])
+  
+  rec_beer_3 <- dat_class_unfiltered %>%
+    filter(Class == cust_pred) %>% 
+    filter(style == style_1) %>%
+    sample_n(num_feature) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #4 Selection (Highest IBU of Cluster)
+  max_ibu <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred)
+  max_ibu_value <- max(max_ibu$ibu) # Creating max ibu value 
+  
+  rec_beer_4 <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred) %>%
+    filter(ibu == max_ibu_value) %>% 
+    sample_n(num_feature) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Beer #5 Selection (Lowest ABV of Cluster)
+  min_abv <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred)
+  min_abv_value <- min(min_abv$abv) # Creating min abv value 
+  
+  rec_beer_5 <- dat_class_unfiltered %>% 
+    filter(Class == cust_pred) %>%
+    filter(abv == min_abv_value) %>% 
+    sample_n(num_feature) %>% 
+    select(Class, style, beer_name, abv, ibu, everything())
+  
+# Binding the beer selections.  
+  rec_beers_final <- bind_rows(rec_beer_1, rec_beer_2, rec_beer_3, rec_beer_4, rec_beer_5)
+  
+# Selecting beers by brewery  
+  rec_breweries <- c(rec_beers_final$brewery_name)
+  
+  rec_beer_brew <- dat_class_unfiltered %>% 
+    filter(brewery_name %in% rec_breweries) %>% 
+    sample_n(num_brew)
+  
+# Selecting beers by state   
+  rec_states <- c(rec_beers_final$state)
+  
+  rec_beer_state <- dat_class_unfiltered %>% 
+    filter(state %in% rec_states) %>% 
+    sample_n(num_state) 
+  
+# Selecting beers by city   
+  rec_city <- c(rec_beers_final$city)
+  
+  rec_beer_city <- dat_class_unfiltered %>% 
+    filter(city %in% rec_city) %>% 
+    sample_n(num_city)
+  
+# Binding the beer selections for brewery, state and city.
+  rec_beers_options <- bind_rows(rec_beer_brew, rec_beer_state, rec_beer_city)
+  
+# Binding all the recommended beers  
+  rec_beers_all <- bind_rows(rec_beer_1, rec_beer_2, rec_beer_3, rec_beer_4, rec_beer_5, rec_beer_brew, rec_beer_state, rec_beer_city)
+  
 ```
 
 ```{r}
-pred_final <- model_rf$finalModel$predictions %>% 
-  tibble::enframe(name = NULL)
-#pred_final
+rec_beers_all
 ```
 
-```{r}
-pred_final %>% 
-  filter(value == 3)
-```
+#------------------------------------------------------------------------------------------------------------
+
+# Canned Craft Beer Recommender Application  
+## Future Development  
+
+Ideas for future development include:
+
+1. More data: bigger, up-dated dataset.  
+2. Add additional continuous variables such as those mentioned earlier like price, temperature, CO2, beer color, ratings, and beer profile notes.    
+3. Offer additional recommendations based on additional features. 
+4. Cleaner, more efficient code
+5. Better graphics, charts and user interface
+
+# ---- Shiny ----  
 
 ```{r}
-model_rf$finalModel$predictions
-```
-
-```{r}
-dat_train_rf %>% 
-  filter(Class == 3) %>% 
-  filter(style != "Other") %>% 
-  filter(state != "Other")
+#model_rf = train(.....)
+saveRDS(model_pp, "models/tj_model_pp.RDS") # pre-preocess model
+saveRDS(model_rf, "models/tj_model_rf.RDS") # random forest model
+saveRDS(hc_complete_all, "models/tj_hc_complete_all.RDS") # hclust model
+saveRDS(craft_beer_app, "models/tj_craft_beer_app.RDS") # craft beer app function
+saveRDS(dat_test_pp, "models/tj_dat_test_pp.RDS") # dat_test_pp dataset
+saveRDS(dat_test_rf, "models/tj_dat_test_rf.RDS") # dat_test_pp dataset
 ```
 
